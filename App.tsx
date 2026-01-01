@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Wallet as EthersWallet } from 'ethers';
 import {
   Wallet,
   Activity,
@@ -38,7 +39,18 @@ import { FlowSniperEngine } from './services/flowSniperEngine';
 
 const App: React.FC = () => {
   // Estados de Controle
-  const [manager] = useState<ManagerProfile>(mockManager);
+  const [manager, setManager] = useState<ManagerProfile>(mockManager);
+
+  // Load real address on mount
+  useEffect(() => {
+    const pvt = localStorage.getItem('fs_private_key');
+    if (pvt) {
+      try {
+        const w = new EthersWallet(pvt);
+        setManager(prev => ({ ...prev, address: w.address }));
+      } catch (e) { console.log("Invalid key in storage"); }
+    }
+  }, []);
   const [activeTab, setActiveTab] = useState<'overview' | 'assets' | 'gas' | 'robots' | 'settings'>('overview');
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const [botActive, setBotActive] = useState(false);
@@ -112,11 +124,40 @@ const App: React.FC = () => {
     }
   }, [botActive, mode]);
 
+  // Auto-Derive Address from Private Key
+  useEffect(() => {
+    if (privateKey && privateKey.length > 60) {
+      try {
+        // Creating a temp wallet to get address
+        // specific import needed or use ethers from window if available, 
+        // but we can imply usage of blockchainService or simple check
+        // For now, let's just update the UI state if we assume valid key
+        // OR better: use ethers library if imported.
+
+        // Since we don't want to add heavy imports to App.tsx if not needed,
+        // let's rely on blockchainService to validate/get address? 
+        // Or just import Wallet from ethers.
+        // Let's check imports. logic merge:
+      } catch (e) { }
+    }
+  }, [privateKey]);
+
+  // Actually, let's do this directly in the saveCredentials or just import Wallet.
+  // Re-writing simple effect:
+
   // Save Credentials
   const saveCredentials = () => {
-    if (privateKey) localStorage.setItem('fs_private_key', privateKey);
+    if (privateKey) {
+      localStorage.setItem('fs_private_key', privateKey);
+      // Try to update manager address visual
+      try {
+        // Basic heuristic or real derivation would require ethers import
+        // Let's leave the derivation for the re-load or add ethers import
+      } catch (e) { }
+    }
     if (rpcUrl) localStorage.setItem('fs_polygon_rpc', rpcUrl);
-    alert('Credenciais Salvas com Segurança (Local Storage)');
+    alert('Credenciais Salvas! O nó Master será atualizado.');
+    window.location.reload(); // Simple reload to re-init services with new keys
   };
 
   // --- LOGIC MERGE: AI & Market Data Fetch ---
