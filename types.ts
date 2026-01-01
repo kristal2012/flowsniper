@@ -61,3 +61,12 @@ export interface FlowStep {
   status: 'SUCCESS' | 'FAILED';
   hash: string;
 }
+
+export interface ArbitrageStep {
+  id: string;
+  timestamp: string;
+  path: string[];
+  profit: number;
+  status: 'SUCCESS' | 'EXPIRED';
+  hash: string;
+}
