@@ -1,0 +1,8 @@
+{
+    "rewrites": [
+        {
+            "source": "/bybit-api/:match*",
+            "destination": "https://api.bybit.com/:match*"
+        }
+    ]
+}
