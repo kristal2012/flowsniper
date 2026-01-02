@@ -31,7 +31,7 @@ import {
   BrainCircuit
 } from 'lucide-react';
 
-import { Asset, Transaction, PerformanceData, ManagerProfile, ArbitrageStep, FlowStep } from './types';
+import { Asset, Transaction, PerformanceData, ManagerProfile, SniperStep, FlowStep } from './types';
 import { mockManager, mockAssets, mockPerformance, mockTransactions } from './services/mockData';
 import { analyzePerformance } from './services/openai';
 import { fetchHistoricalData, fetchCurrentPrice } from './services/marketDataService';
@@ -60,7 +60,7 @@ const App: React.FC = () => {
   const [privateKey, setPrivateKey] = useState(localStorage.getItem('fs_private_key') || '');
   const [rpcUrl, setRpcUrl] = useState(localStorage.getItem('fs_polygon_rpc') || '');
   const [demoBalance, setDemoBalance] = useState<number>(0); // New Demo Balance State
-  const [arbitrageLogs, setArbitrageLogs] = useState<ArbitrageStep[]>([]);
+  const [sniperLogs, setSniperLogs] = useState<SniperStep[]>([]);
 
   // Estados Financeiros
   const [dailyProfit, setDailyProfit] = useState(0);
@@ -92,8 +92,8 @@ const App: React.FC = () => {
   // --- LOGIC MERGE: Real Engine Initialization ---
   useEffect(() => {
     sniperRef.current = new FlowSniperEngine((newStep: FlowStep) => {
-      // Map FlowStep to ArbitrageStep for the new UI
-      const mappedStep: ArbitrageStep = {
+      // Map FlowStep to SniperStep for the new UI
+      const mappedStep: SniperStep = {
         id: newStep.id,
         timestamp: newStep.timestamp,
         path: newStep.pair.split('/'), // e.g. "WMATIC/USDC" -> ["WMATIC", "USDC"]
@@ -102,7 +102,7 @@ const App: React.FC = () => {
         hash: newStep.hash
       };
 
-      setArbitrageLogs(prev => [mappedStep, ...prev].slice(0, 15));
+      setSniperLogs(prev => [mappedStep, ...prev].slice(0, 15));
 
       if (newStep.profit > 0) {
         setDailyProfit(prev => prev + newStep.profit);
@@ -476,23 +476,23 @@ const App: React.FC = () => {
                   <div className="p-8 border-b border-zinc-800/30 flex items-center justify-between bg-black/50">
                     <div className="flex items-center gap-4">
                       <div className="w-3 h-3 bg-emerald-500 rounded-full animate-ping"></div>
-                      <h3 className="font-black text-sm uppercase tracking-widest italic">Live Arbitrage Stream</h3>
+                      <h3 className="font-black text-sm uppercase tracking-widest italic">Live Flow Stream</h3>
                     </div>
                     <div className="flex items-center gap-8">
                       <div className="flex flex-col items-end">
                         <span className="text-[9px] text-zinc-500 font-bold uppercase mb-0.5">Total Ops</span>
-                        <span className="text-xs font-mono font-bold text-white">{arbitrageLogs.length}</span>
+                        <span className="text-xs font-mono font-bold text-white">{sniperLogs.length}</span>
                       </div>
                     </div>
                   </div>
                   <div className="p-8 space-y-3 font-mono text-[11px] max-h-[500px] overflow-y-auto custom-scrollbar">
-                    {arbitrageLogs.length === 0 && (
+                    {sniperLogs.length === 0 && (
                       <div className="flex flex-col items-center justify-center py-24 opacity-10">
                         <Search size={48} className="mb-6 animate-bounce" />
                         <p className="text-lg font-black italic uppercase">Buscando Rotas Lucrativas...</p>
                       </div>
                     )}
-                    {arbitrageLogs.map((log) => (
+                    {sniperLogs.map((log) => (
                       <div
                         key={log.id}
                         className={`group flex justify-between items-center p-5 rounded-[1.5rem] border transition-all duration-300 hover:scale-[1.02] ${log.profit < 0 ? 'bg-rose-500/5 border-rose-500/10' : 'bg-emerald-500/5 border-emerald-500/10 hover:border-emerald-500/30'}`}

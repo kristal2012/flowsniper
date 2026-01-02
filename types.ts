@@ -62,7 +62,7 @@ export interface FlowStep {
   hash: string;
 }
 
-export interface ArbitrageStep {
+export interface SniperStep {
   id: string;
   timestamp: string;
   path: string[];
