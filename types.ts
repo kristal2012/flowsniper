@@ -50,7 +50,21 @@ export interface BotInstance {
   profitSplit: number; // e.g., 0.7 for 70%
 }
 
-export type FlowOperation = 'SLIPPAGE_SWAP' | 'LP_FEE_CAPTURE';
+export type FlowOperation =
+  | 'SLIPPAGE_SWAP'
+  | 'LP_FEE_CAPTURE'
+  | 'SANDWICH_DETECTION'
+  | 'CROSS_DEX_LIQUIDITY'
+  | 'ROUTE_OPTIMIZATION'
+  | 'LIQUIDITY_SCAN';
+
+export const SUPPORTED_PAIRS = [
+  'POL/USDT',
+  'WBTC/USDT',
+  'WETH/USDT',
+  'POL/ETH',
+  'WBTC/ETH'
+];
 
 export interface FlowStep {
   id: string;
