@@ -31,6 +31,13 @@ import {
   BrainCircuit
 } from 'lucide-react';
 
+declare global {
+  interface Window {
+    puter: any;
+  }
+}
+const puter = typeof window !== 'undefined' ? (window as any).puter : undefined;
+
 import { Asset, Transaction, PerformanceData, ManagerProfile, SniperStep, FlowStep } from './types';
 import { mockManager, mockAssets, mockPerformance, mockTransactions } from './services/mockData';
 import { analyzePerformance } from './services/openai';
@@ -425,9 +432,30 @@ const App: React.FC = () => {
                       </span>
                     </div>
                   </div>
-                  <div className="flex-1 flex flex-col items-center justify-center p-12 text-center opacity-20">
-                    <Cpu size={64} className="mb-6" />
-                    <p className="text-lg font-bold italic tracking-tight uppercase">Aguardando comando do Motor Sniper</p>
+                  <div className="flex-1 overflow-hidden">
+                    <div className="p-8 space-y-4 max-h-[350px] overflow-y-auto custom-scrollbar font-mono text-[10px]">
+                      {sniperLogs.length === 0 ? (
+                        <div className="h-full flex flex-col items-center justify-center py-20 text-center opacity-20">
+                          <Cpu size={48} className="mb-4" />
+                          <p className="text-sm font-bold italic tracking-tight uppercase">Aguardando comando do Motor Sniper</p>
+                        </div>
+                      ) : (
+                        sniperLogs.slice(0, 5).map((log) => (
+                          <div key={log.id} className="flex justify-between items-center p-4 bg-white/5 rounded-xl border border-white/5 animate-in slide-in-from-left-5 duration-300">
+                            <div className="flex items-center gap-4">
+                              <div className={`w-1.5 h-1.5 rounded-full ${log.profit < 0 ? 'bg-rose-500' : 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]'}`}></div>
+                              <div className="flex flex-col">
+                                <span className="text-zinc-400 font-black">{log.path.join(' → ')}</span>
+                                <span className="text-zinc-600 text-[9px]">{log.timestamp}</span>
+                              </div>
+                            </div>
+                            <span className={`font-black ${log.profit < 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                              {log.profit > 0 ? '+' : ''}{log.profit.toFixed(4)} <span className="text-zinc-700">POL</span>
+                            </span>
+                          </div>
+                        ))
+                      )}
+                    </div>
                   </div>
                 </div>
 
