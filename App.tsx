@@ -69,16 +69,18 @@ const App: React.FC = () => {
   const [realPolBalance, setRealPolBalance] = useState<string>('0.00');
 
   const fetchRealBalances = async () => {
+    console.log("[BalanceDebug] Mode:", mode, "Address:", manager.address);
     if (mode === 'REAL' && manager.address) {
       try {
         const usdtAddr = '0xc2132d05d31c914a87c6611c10748aeb04b58e8f';
         const polAddr = '0x0000000000000000000000000000000000000000';
         const usdt = await blockchainService.getBalance(usdtAddr, manager.address);
         const pol = await blockchainService.getBalance(polAddr, manager.address);
+        console.log("[BalanceDebug] USDT:", usdt, "POL:", pol);
         setRealUsdtBalance(Number(usdt).toFixed(2));
         setRealPolBalance(Number(pol).toFixed(2));
       } catch (err) {
-        console.error("Failed to fetch real balances", err);
+        console.error("[BalanceDebug] Error:", err);
       }
     }
   };
