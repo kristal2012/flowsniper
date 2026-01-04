@@ -51,7 +51,7 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'overview' | 'assets' | 'gas' | 'robots' | 'settings'>('overview');
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const [botActive, setBotActive] = useState(false);
-  const [mode, setMode] = useState<'REAL' | 'DEMO'>('DEMO');
+  const [mode, setMode] = useState<'REAL' | 'DEMO'>((localStorage.getItem('fs_mode') as 'REAL' | 'DEMO') || 'DEMO');
 
   // Load real address on mount
   useEffect(() => {
@@ -189,6 +189,11 @@ const App: React.FC = () => {
     };
   }, [mode]);
 
+  // Persist Mode
+  useEffect(() => {
+    localStorage.setItem('fs_mode', mode);
+  }, [mode]);
+
   // --- LOGIC MERGE: Start/Stop Engine ---
   useEffect(() => {
     if (botActive && sniperRef.current) {
@@ -223,15 +228,22 @@ const App: React.FC = () => {
   const saveCredentials = () => {
     if (privateKey) {
       localStorage.setItem('fs_private_key', privateKey);
-      // Try to update manager address visual
       try {
-        // Basic heuristic or real derivation would require ethers import
-        // Let's leave the derivation for the re-load or add ethers import
-      } catch (e) { }
+        const w = new EthersWallet(privateKey);
+        setManager(prev => ({ ...prev, address: w.address }));
+        console.log("Derived address from PK:", w.address);
+      } catch (e) {
+        console.error("Failed to derive address from PK", e);
+      }
     }
     if (rpcUrl) localStorage.setItem('fs_polygon_rpc', rpcUrl);
-    alert('Credenciais Salvas! O nó Master será atualizado.');
-    window.location.reload(); // Simple reload to re-init services with new keys
+
+    // Clear balances to force refresh
+    setRealUsdtBalance('0.00');
+    setRealPolBalance('0.00');
+
+    alert('Credenciais Salvas! Sincronizando com a Blockchain...');
+    fetchRealBalances();
   };
 
   // --- LOGIC MERGE: AI & Market Data Fetch ---
@@ -627,7 +639,7 @@ const App: React.FC = () => {
                 <div className="absolute inset-0 bg-gradient-to-t from-[#f01a74]/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
                 <p className="text-zinc-500 text-xs font-black uppercase tracking-[0.4em] mb-4 relative z-10">Capital Sob Gestão Privada</p>
                 <h2 className="text-7xl font-black font-mono tracking-tighter relative z-10">
-                  {mode === 'DEMO' ? demoBalance.toFixed(2) : manager.balance || '0.00'}
+                  {mode === 'DEMO' ? demoBalance.toFixed(2) : realUsdtBalance}
                   <span className="text-zinc-700 text-4xl uppercase font-sans">USDT</span>
                 </h2>
               </div>
