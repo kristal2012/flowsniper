@@ -68,6 +68,7 @@ const App: React.FC = () => {
   const [realPolBalance, setRealPolBalance] = useState<string>('0.00');
   const [isSyncing, setIsSyncing] = useState(false);
   const [pvtKeyError, setPvtKeyError] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   const fetchRealBalances = async () => {
     if (mode === 'REAL' && manager.address) {
@@ -109,7 +110,11 @@ const App: React.FC = () => {
 
   // Credentials State
   const [privateKey, setPrivateKey] = useState(localStorage.getItem('fs_private_key') || '');
+  const [operatorAddress, setOperatorAddress] = useState(localStorage.getItem('fs_operator_address') || '');
   const [rpcUrl, setRpcUrl] = useState(localStorage.getItem('fs_polygon_rpc') || '');
+  const [isConnectingMetaMask, setIsConnectingMetaMask] = useState(false);
+  const [isSettingUpOperator, setIsSettingUpOperator] = useState(false);
+  const [isGrantingAllowance, setIsGrantingAllowance] = useState(false);
   const [demoBalance, setDemoBalance] = useState<number>(0); // New Demo Balance State
   const [demoGasBalance, setDemoGasBalance] = useState<number>(0); // New Demo Gas State
   const [sniperLogs, setSniperLogs] = useState<SniperStep[]>([]);
@@ -271,6 +276,49 @@ const App: React.FC = () => {
 
     alert('Credenciais Salvas! Sincronizando com a Blockchain...');
     fetchRealBalances();
+  };
+
+  const connectMetaMask = async () => {
+    setIsConnectingMetaMask(true);
+    try {
+      const addr = await blockchainService.connectMetaMask();
+      setManager(prev => ({ ...prev, address: addr }));
+      localStorage.setItem('fs_owner_address', addr);
+      alert("MetaMask Conectada: " + addr);
+    } catch (e: any) {
+      alert("Erro ao conectar MetaMask: " + e.message);
+    } finally {
+      setIsConnectingMetaMask(false);
+    }
+  };
+
+  const setupOperator = async () => {
+    if (!manager.address) return alert("Conecte a MetaMask primeiro.");
+    setIsSettingUpOperator(true);
+    try {
+      const opAddr = await blockchainService.setupOperator(manager.address);
+      setOperatorAddress(opAddr);
+      localStorage.setItem('fs_operator_address', opAddr);
+      alert("Operador Configurado com Sucesso!\nEndereço: " + opAddr);
+    } catch (e: any) {
+      alert("Erro ao configurar operador: " + e.message);
+    } finally {
+      setIsSettingUpOperator(false);
+    }
+  };
+
+  const grantAllowance = async () => {
+    setIsGrantingAllowance(true);
+    try {
+      const usdtAddr = '0xc2132d05d31c914a87c6611c10748aeb04b58e8f';
+      const tx = await blockchainService.grantAllowance(usdtAddr);
+      alert("Permissão Concedida! TX: " + tx);
+      fetchRealBalances();
+    } catch (e: any) {
+      alert("Erro ao conceder permissão: " + e.message);
+    } finally {
+      setIsGrantingAllowance(false);
+    }
   };
 
   // --- LOGIC MERGE: AI & Market Data Fetch ---
@@ -479,6 +527,7 @@ const App: React.FC = () => {
                   onAdd={() => setActiveTab('assets')}
                   onRemove={() => setActiveTab('assets')}
                   isLoading={isSyncing && realUsdtBalance === '0.00'}
+                  onRefresh={fetchRealBalances}
                 />
                 <SummaryCard
                   title="Reserva Operacional"
@@ -487,6 +536,7 @@ const App: React.FC = () => {
                   onAdd={() => setActiveTab('gas')}
                   onRemove={() => setActiveTab('gas')}
                   isLoading={isSyncing && realPolBalance === '0.00'}
+                  onRefresh={fetchRealBalances}
                 />
               </div>
 
@@ -822,9 +872,78 @@ const App: React.FC = () => {
                     <p className="text-[10px] text-zinc-600 italic">* Use o Alchemy para execução ultra-rápida (Plano Free ou Pago).</p>
                   </div>
 
-                  <button onClick={saveCredentials} className="px-10 py-5 bg-[#f01a74] rounded-2xl font-black text-xs uppercase tracking-widest text-white shadow-xl shadow-[#f01a74]/20 hover:bg-[#d01664] transition-all active:scale-95">
-                    Salvar Credenciais
+                  <button onClick={saveCredentials} className="px-10 py-5 bg-zinc-800 rounded-2xl font-black text-xs uppercase tracking-widest text-zinc-400 hover:text-white transition-all active:scale-95 border border-zinc-700">
+                    Salvar Credenciais (Manual)
                   </button>
+
+                  <div className="pt-8 border-t border-zinc-800/50 space-y-6">
+                    <h3 className="text-xl font-black italic uppercase tracking-tighter">Fluxo de Conexão MetaMask</h3>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <button
+                        onClick={connectMetaMask}
+                        disabled={isConnectingMetaMask}
+                        className={`p-6 rounded-2xl border flex flex-col items-center gap-3 transition-all ${manager.address && manager.address !== mockManager.address ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-500' : 'bg-[#141417] border-zinc-800 hover:border-[#f01a74] text-zinc-400'}`}
+                      >
+                        <Wallet size={24} />
+                        <span className="text-[10px] font-black uppercase tracking-widest">{isConnectingMetaMask ? 'Conectando...' : '1. Conectar MetaMask'}</span>
+                      </button>
+
+                      <button
+                        onClick={setupOperator}
+                        disabled={isSettingUpOperator || !manager.address || manager.address === mockManager.address}
+                        className={`p-6 rounded-2xl border flex flex-col items-center gap-3 transition-all ${operatorAddress ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-500' : 'bg-[#141417] border-zinc-800 hover:border-[#f01a74] text-zinc-400 opacity-50 disabled:cursor-not-allowed'}`}
+                      >
+                        <ShieldCheck size={24} />
+                        <span className="text-[10px] font-black uppercase tracking-widest">{isSettingUpOperator ? 'Autorizando...' : '2. Autorizar Operador'}</span>
+                      </button>
+
+                      <button
+                        onClick={grantAllowance}
+                        disabled={isGrantingAllowance || !operatorAddress}
+                        className={`p-6 rounded-2xl border flex flex-col items-center gap-3 transition-all bg-[#141417] border-zinc-800 hover:border-[#f01a74] text-zinc-400 ${!operatorAddress ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      >
+                        <Zap size={24} />
+                        <span className="text-[10px] font-black uppercase tracking-widest">{isGrantingAllowance ? 'Processando...' : '3. Permitir USDT'}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Painel de Diagnóstico */}
+                <div className="mt-12 p-8 bg-black/40 border border-zinc-800 rounded-[2.5rem] space-y-6">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-black uppercase tracking-widest flex items-center gap-2">
+                      <Activity size={16} className="text-emerald-500" /> Diagnóstico de Conexão
+                    </h3>
+                    <button onClick={fetchRealBalances} className="text-[10px] font-bold text-zinc-500 hover:text-white uppercase tracking-tighter transition-colors">Testar agora</button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="bg-[#0c0c0e] p-4 rounded-2xl border border-zinc-800/50">
+                      <p className="text-[9px] text-zinc-600 font-bold uppercase mb-1">Endereço Derivado</p>
+                      <p className="text-[10px] font-mono text-zinc-300 break-all">{manager.address}</p>
+                    </div>
+                    <div className="bg-[#0c0c0e] p-4 rounded-2xl border border-zinc-800/50">
+                      <p className="text-[9px] text-zinc-600 font-bold uppercase mb-1">Estado do RPC</p>
+                      <p className={`text-[10px] font-bold uppercase ${syncError ? 'text-rose-500' : 'text-emerald-500'}`}>
+                        {syncError ? 'Falha de Conexão' : 'Operacional (OK)'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {syncError && (
+                    <div className="p-4 bg-rose-500/5 border border-rose-500/20 rounded-xl">
+                      <p className="text-[9px] text-rose-500 font-black uppercase mb-1 tracking-widest">Logs de Erro</p>
+                      <p className="text-[10px] font-mono text-rose-400 leading-tight">{syncError}</p>
+                    </div>
+                  )}
+
+                  <div className="p-4 bg-zinc-900/50 rounded-xl border border-zinc-800/50">
+                    <p className="text-[10px] text-zinc-500 leading-relaxed font-medium italic">
+                      💡 Se o endereço acima NÃO for o mesmo da sua MetaMask, sua Chave Privada está incorreta ou pertence a outra conta.
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -845,10 +964,17 @@ const App: React.FC = () => {
 };
 
 // COMPONENTES DE INTERFACE PERSONALIZADOS
-const SummaryCard: React.FC<{ title: string; value: string; unit: string; onAdd: () => void; onRemove: () => void; isLoading?: boolean }> = ({ title, value, unit, onAdd, onRemove, isLoading }) => (
+const SummaryCard: React.FC<{ title: string; value: string; unit: string; onAdd: () => void; onRemove: () => void; isLoading?: boolean; onRefresh?: () => void }> = ({ title, value, unit, onAdd, onRemove, isLoading, onRefresh }) => (
   <div className="bg-[#141417] rounded-[2.5rem] border border-zinc-800/50 p-10 shadow-2xl hover:border-[#f01a74]/30 transition-all group overflow-hidden relative">
     <div className="absolute inset-0 bg-gradient-to-br from-[#f01a74]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-    <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-4 relative z-10">{title}</p>
+    <div className="flex justify-between items-start mb-4 relative z-10">
+      <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest">{title}</p>
+      {onRefresh && (
+        <button onClick={onRefresh} className={`text-zinc-600 hover:text-[#f01a74] transition-colors ${isLoading ? 'animate-spin' : ''}`}>
+          <Activity size={14} />
+        </button>
+      )}
+    </div>
     <h2 className={`text-5xl font-black mb-10 font-mono tracking-tighter relative z-10 ${isLoading ? 'animate-pulse text-zinc-600' : ''}`}>
       {value} <span className="text-zinc-700 text-2xl uppercase font-sans">{unit}</span>
     </h2>

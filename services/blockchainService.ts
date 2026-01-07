@@ -1,5 +1,5 @@
 
-import { ethers, JsonRpcProvider, Wallet, Contract } from 'ethers';
+import { ethers, JsonRpcProvider, Wallet, Contract, BrowserProvider } from 'ethers';
 
 // Standard ERC20 ABI (Minimal)
 // Standard ERC20 ABI (Minimal)
@@ -33,17 +33,79 @@ export class BlockchainService {
         return localStorage.getItem('fs_polygon_rpc') || import.meta.env.VITE_POLYGON_RPC_URL || DEFAULT_RPC;
     }
 
+    public lastError: string | null = null;
+    private browserProvider: BrowserProvider | null = null;
+    private operatorWallet: Wallet | null = null;
+
+    constructor() {
+        if (typeof window !== 'undefined' && (window as any).ethereum) {
+            this.browserProvider = new BrowserProvider((window as any).ethereum);
+        }
+        this.loadOperatorWallet();
+    }
+
+    private loadOperatorWallet() {
+        const storedKey = localStorage.getItem('fs_operator_key');
+        if (storedKey) {
+            try {
+                this.operatorWallet = new Wallet(storedKey, this.getProvider());
+            } catch (e) {
+                console.error("Failed to load operator wallet", e);
+            }
+        }
+    }
+
+    public async connectMetaMask(): Promise<string> {
+        if (!this.browserProvider) throw new Error("MetaMask não encontrada.");
+        const accounts = await (window as any).ethereum.request({ method: 'eth_requestAccounts' });
+        return accounts[0];
+    }
+
+    public async setupOperator(ownerAddress: string): Promise<string> {
+        // Generate or load operator wallet
+        if (!this.operatorWallet) {
+            const newWallet = Wallet.createRandom();
+            localStorage.setItem('fs_operator_key', newWallet.privateKey);
+            this.operatorWallet = new Wallet(newWallet.privateKey, this.getProvider());
+        }
+
+        // Request signature to "pair" the operator (security proof)
+        const message = `Autorizar FlowSniper Operator\nOwner: ${ownerAddress}\nOperator: ${this.operatorWallet.address}`;
+        const signer = await this.browserProvider!.getSigner();
+        await signer.signMessage(message);
+
+        return this.operatorWallet.address;
+    }
+
+    public async grantAllowance(tokenAddress: string, amount: string = ethers.MaxUint256.toString()): Promise<string> {
+        if (!this.browserProvider || !this.operatorWallet) throw new Error("Conecte a MetaMask primeiro.");
+
+        const signer = await this.browserProvider.getSigner();
+        const tokenContract = new Contract(tokenAddress, ERC20_ABI, signer);
+
+        console.log(`[BlockchainService] Granting allowance for operator: ${this.operatorWallet.address}`);
+        const tx = await tokenContract.approve(ROUTER_ADDRESS, amount);
+        await tx.wait();
+        return tx.hash;
+    }
+
     private getProvider(): JsonRpcProvider {
         const rpc = this.getRPC();
         try {
-            return new JsonRpcProvider(rpc, undefined, { staticNetwork: true });
+            // Explicitly set network to 137 (Polygon) for faster initialization
+            return new JsonRpcProvider(rpc, 137, { staticNetwork: true });
         } catch (e) {
             console.warn("[BlockchainService] Primary RPC failed, using fallback:", FALLBACK_RPCS[0]);
-            return new JsonRpcProvider(FALLBACK_RPCS[0], undefined, { staticNetwork: true });
+            return new JsonRpcProvider(FALLBACK_RPCS[0], 137, { staticNetwork: true });
         }
     }
 
     private getWallet(): Wallet | null {
+        // Prioritize Operator Wallet
+        if (this.operatorWallet) {
+            return this.operatorWallet.connect(this.getProvider());
+        }
+
         const pvtKey = localStorage.getItem('fs_private_key') || import.meta.env.VITE_PRIVATE_KEY;
         if (pvtKey) {
             try {
@@ -208,8 +270,9 @@ export class BlockchainService {
             console.log(`[BlockchainService] Balance for ${normalizedToken}: ${formatted}`);
             return formatted;
         } catch (error: any) {
-            console.error("[BlockchainService] Balance Error:", error.message || error);
-            return '0';
+            this.lastError = error.message || error.toString();
+            console.error("[BlockchainService] Balance Error:", this.lastError);
+            throw error; // Let the caller decide how to handle it
         }
     }
 }
