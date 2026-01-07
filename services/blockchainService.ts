@@ -57,11 +57,45 @@ export class BlockchainService {
 
     public async connectMetaMask(): Promise<string> {
         if (!this.browserProvider) throw new Error("MetaMask não encontrada.");
+        await this.ensurePolygonNetwork();
         const accounts = await (window as any).ethereum.request({ method: 'eth_requestAccounts' });
         return accounts[0];
     }
 
+    private async ensurePolygonNetwork(): Promise<void> {
+        if (!window.ethereum) return;
+
+        const chainId = '0x89'; // 137 in hex
+        try {
+            await (window as any).ethereum.request({
+                method: 'wallet_switchEthereumChain',
+                params: [{ chainId }],
+            });
+        } catch (switchError: any) {
+            // This error code indicates that the chain has not been added to MetaMask.
+            if (switchError.code === 4902) {
+                try {
+                    await (window as any).ethereum.request({
+                        method: 'wallet_addEthereumChain',
+                        params: [{
+                            chainId,
+                            chainName: 'Polygon Mainnet',
+                            nativeCurrency: { name: 'POL', symbol: 'POL', decimals: 18 },
+                            rpcUrls: ['https://polygon-rpc.com'],
+                            blockExplorerUrls: ['https://polygonscan.com/']
+                        }],
+                    });
+                } catch (addError) {
+                    throw new Error("Não foi possível adicionar a rede Polygon.");
+                }
+            } else {
+                throw new Error("Por favor, mude para a rede Polygon na sua MetaMask.");
+            }
+        }
+    }
+
     public async setupOperator(ownerAddress: string): Promise<string> {
+        await this.ensurePolygonNetwork();
         // Generate or load operator wallet
         if (!this.operatorWallet) {
             const newWallet = Wallet.createRandom();
@@ -80,6 +114,7 @@ export class BlockchainService {
     public async grantAllowance(tokenAddress: string, amount: string = ethers.MaxUint256.toString()): Promise<string> {
         if (!this.browserProvider || !this.operatorWallet) throw new Error("Conecte a MetaMask primeiro.");
 
+        await this.ensurePolygonNetwork();
         const signer = await this.browserProvider.getSigner();
         const tokenContract = new Contract(tokenAddress, ERC20_ABI, signer);
 
