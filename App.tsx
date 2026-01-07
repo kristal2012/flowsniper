@@ -278,15 +278,15 @@ const App: React.FC = () => {
     fetchRealBalances();
   };
 
-  const connectMetaMask = async () => {
+  const connectWallet = async () => {
     setIsConnectingMetaMask(true);
     try {
-      const addr = await blockchainService.connectMetaMask();
+      const addr = await blockchainService.connectWallet();
       setManager(prev => ({ ...prev, address: addr }));
       localStorage.setItem('fs_owner_address', addr);
-      alert("MetaMask Conectada: " + addr);
+      alert("Carteira Conectada: " + addr);
     } catch (e: any) {
-      alert("Erro ao conectar MetaMask: " + e.message);
+      alert("Erro ao conectar carteira: " + e.message);
     } finally {
       setIsConnectingMetaMask(false);
     }
@@ -877,16 +877,16 @@ const App: React.FC = () => {
                   </button>
 
                   <div className="pt-8 border-t border-zinc-800/50 space-y-6">
-                    <h3 className="text-xl font-black italic uppercase tracking-tighter">Fluxo de Conexão MetaMask</h3>
+                    <h3 className="text-xl font-black italic uppercase tracking-tighter">Fluxo de Conexão Rabby</h3>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <button
-                        onClick={connectMetaMask}
+                        onClick={connectWallet}
                         disabled={isConnectingMetaMask}
                         className={`p-6 rounded-2xl border flex flex-col items-center gap-3 transition-all ${manager.address && manager.address !== mockManager.address ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-500' : 'bg-[#141417] border-zinc-800 hover:border-[#f01a74] text-zinc-400'}`}
                       >
                         <Wallet size={24} />
-                        <span className="text-[10px] font-black uppercase tracking-widest">{isConnectingMetaMask ? 'Conectando...' : '1. Conectar MetaMask'}</span>
+                        <span className="text-[10px] font-black uppercase tracking-widest">{isConnectingMetaMask ? 'Conectando...' : '1. Conectar Rabby'}</span>
                       </button>
 
                       <button

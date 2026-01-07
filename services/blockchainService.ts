@@ -38,8 +38,10 @@ export class BlockchainService {
     private operatorWallet: Wallet | null = null;
 
     constructor() {
-        if (typeof window !== 'undefined' && (window as any).ethereum) {
-            this.browserProvider = new BrowserProvider((window as any).ethereum);
+        if (typeof window !== 'undefined' && (window.ethereum || (window as any).rabby)) {
+            // Priority to Rabby if available, otherwise standard ethereum
+            const provider = (window as any).rabby || window.ethereum;
+            this.browserProvider = new BrowserProvider(provider);
         }
         this.loadOperatorWallet();
     }
@@ -55,27 +57,28 @@ export class BlockchainService {
         }
     }
 
-    public async connectMetaMask(): Promise<string> {
-        if (!this.browserProvider) throw new Error("MetaMask não encontrada.");
+    public async connectWallet(): Promise<string> {
+        if (!this.browserProvider) throw new Error("Carteira (Rabby/MetaMask) não encontrada.");
         await this.ensurePolygonNetwork();
-        const accounts = await (window as any).ethereum.request({ method: 'eth_requestAccounts' });
+        const accounts = await (window.ethereum || (window as any).rabby).request({ method: 'eth_requestAccounts' });
         return accounts[0];
     }
 
     private async ensurePolygonNetwork(): Promise<void> {
-        if (!window.ethereum) return;
+        const provider = (window as any).rabby || (window as any).ethereum;
+        if (!provider) return;
 
         const chainId = '0x89'; // 137 in hex
         try {
-            await (window as any).ethereum.request({
+            await provider.request({
                 method: 'wallet_switchEthereumChain',
                 params: [{ chainId }],
             });
         } catch (switchError: any) {
-            // This error code indicates that the chain has not been added to MetaMask.
+            // This error code indicates that the chain has not been added
             if (switchError.code === 4902) {
                 try {
-                    await (window as any).ethereum.request({
+                    await provider.request({
                         method: 'wallet_addEthereumChain',
                         params: [{
                             chainId,
@@ -89,7 +92,7 @@ export class BlockchainService {
                     throw new Error("Não foi possível adicionar a rede Polygon.");
                 }
             } else {
-                throw new Error("Por favor, mude para a rede Polygon na sua MetaMask.");
+                throw new Error("Por favor, mude para a rede Polygon na sua Carteira.");
             }
         }
     }
@@ -112,7 +115,7 @@ export class BlockchainService {
     }
 
     public async grantAllowance(tokenAddress: string, amount: string = ethers.parseUnits("100000", 6).toString()): Promise<string> {
-        if (!this.browserProvider || !this.operatorWallet) throw new Error("Conecte a MetaMask primeiro.");
+        if (!this.browserProvider || !this.operatorWallet) throw new Error("Conecte a Carteira primeiro.");
 
         await this.ensurePolygonNetwork();
         const signer = await this.browserProvider.getSigner();
