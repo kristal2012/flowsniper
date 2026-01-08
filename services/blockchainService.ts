@@ -340,35 +340,53 @@ export class BlockchainService {
             const balance = await contract.balanceOf(normalizedAddress);
 
             // Detection of decimals
-            const USDT_ADDR = '0xc2132d05d31c914a87c6611c10748aeb04b58e8f';
-            const USDC_BRIDGED = '0x2791bca1f2de4661ed88a30c99a7a9449aa84174';
-            const USDC_NATIVE = '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359';
+            const STABLES: { [key: string]: string } = {
+                'USDT_NATIVE': '0xc2132d05d31c914a87c6611c10748aeb04b58e8f',
+                'USDC_BRIDGED': '0x2791bca1f2de4661ed88a30c99a7a9449aa84174',
+                'USDC_NATIVE': '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359',
+                'DAI_NATIVE': '0x8f3cf7ad29050398801915a133026224328322ea'
+            };
 
-            const isStable = [USDT_ADDR, USDC_BRIDGED, USDC_NATIVE]
-                .some(addr => addr.toLowerCase() === normalizedToken.toLowerCase());
+            const isStable = Object.values(STABLES).some(addr => addr.toLowerCase() === normalizedToken.toLowerCase());
 
             let decimals = isStable ? 6 : 18;
+            if (normalizedToken.toLowerCase() === STABLES.DAI_NATIVE.toLowerCase()) decimals = 18;
 
-            // Fallback: Try to fetch decimals from contract to be extra sure
+            // Fallback: Try to fetch decimals from contract
             try {
                 const contractWithDecimals = new Contract(normalizedToken, ["function decimals() view returns (uint8)"], provider);
                 const fetchedDecimals = await contractWithDecimals.decimals();
                 decimals = Number(fetchedDecimals);
-                console.log(`[BlockchainService] Detected ${decimals} decimals for ${normalizedToken}`);
             } catch (e) {
-                console.log(`[BlockchainService] Decimals fetch failed for ${normalizedToken}, using ${decimals}`);
+                // Ignore failure, use default/detected
             }
 
             const formatted = ethers.formatUnits(balance, decimals);
-            console.log(`[BlockchainService] Balance for ${normalizedToken}: ${formatted} (Raw: ${balance.toString()}, Decimals: ${decimals})`);
-            return formatted;
 
-            console.log(`[BlockchainService] Balance for ${normalizedToken}: ${formatted} (Raw: ${balance.toString()}, Decimals: ${decimals})`);
+            // SMART DISCOVERY: If balance is 0 and we are checking USDT, let's try others just in case
+            if (formatted === '0.0' && normalizedToken.toLowerCase() === STABLES.USDT_NATIVE.toLowerCase()) {
+                console.log("[BlockchainService] Primary USDT is 0. Attempting discovery...");
+                for (const [name, addr] of Object.entries(STABLES)) {
+                    if (addr.toLowerCase() === STABLES.USDT_NATIVE.toLowerCase()) continue;
+                    try {
+                        const tempContract = new Contract(addr, ERC20_ABI, provider);
+                        const tempBal = await tempContract.balanceOf(normalizedAddress);
+                        if (tempBal > 0n) {
+                            const tempDec = name.includes('DAI') ? 18 : 6;
+                            const res = ethers.formatUnits(tempBal, tempDec);
+                            console.log(`[BlockchainService] DISCOVERY! Found ${res} in ${name} (${addr})`);
+                            return res;
+                        }
+                    } catch (e) { }
+                }
+            }
+
+            console.log(`[BlockchainService] Final Balance for ${normalizedToken}: ${formatted} (Raw: ${balance.toString()}, Decimals: ${decimals})`);
             return formatted;
         } catch (error: any) {
             this.lastError = error.message || error.toString();
             console.error("[BlockchainService] Balance Error:", this.lastError);
-            throw error; // Let the caller decide how to handle it
+            throw error;
         }
     }
 }
