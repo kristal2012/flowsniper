@@ -339,12 +339,16 @@ export class BlockchainService {
             const balance = await contract.balanceOf(normalizedAddress);
 
             // USDT / USDC on Polygon use 6 decimals
-            const isStable = normalizedToken === ethers.getAddress('0xc2132d05d31c914a87c6611c10748aeb04b58e8f') || // USDT
-                normalizedToken === ethers.getAddress('0x2791bca1f2de4661ed88a30c99a7a9449aa84174');   // USDC
+            const USDT_ADDR = '0xc2132d05d31c914a87c6611c10748aeb04b58e8f';
+            const USDC_ADDR = '0x2791bca1f2de4661ed88a30c99a7a9449aa84174';
+
+            const isStable = normalizedToken.toLowerCase() === USDT_ADDR.toLowerCase() ||
+                normalizedToken.toLowerCase() === USDC_ADDR.toLowerCase();
 
             const decimals = isStable ? 6 : 18;
             const formatted = ethers.formatUnits(balance, decimals);
-            console.log(`[BlockchainService] Balance for ${normalizedToken}: ${formatted}`);
+
+            console.log(`[BlockchainService] Balance for ${normalizedToken}: ${formatted} (Raw: ${balance.toString()}, Decimals: ${decimals})`);
             return formatted;
         } catch (error: any) {
             this.lastError = error.message || error.toString();

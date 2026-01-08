@@ -92,6 +92,7 @@ const App: React.FC = () => {
         console.log("[BalanceDebug] Result - USDT:", usdt, "POL:", pol);
         setRealUsdtBalance(Number(usdt).toFixed(2));
         setRealPolBalance(Number(pol).toFixed(2));
+        console.log("[BalanceDebug] UI State Updated - USDT:", Number(usdt).toFixed(2), "POL:", Number(pol).toFixed(2));
       } catch (err) {
         console.error("[BalanceDebug] Connection Error:", err);
       } finally {
