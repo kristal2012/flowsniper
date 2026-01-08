@@ -3,7 +3,8 @@ import { ethers, JsonRpcProvider, Wallet, Contract, BrowserProvider } from 'ethe
 
 // Standard ERC20 ABI (Minimal)
 const ERC20_ABI = [
-    "function balanceOf(address owner) view returns (uint256)",
+    "function balance_Of(address owner) view returns (uint256)",
+    "function decimals() view returns (uint8)",
     "function allowance(address owner, address spender) view returns (uint256)",
     "function transfer(address to, uint256 amount) returns (bool)",
     "function transferFrom(address from, address to, uint256 amount) returns (bool)",
