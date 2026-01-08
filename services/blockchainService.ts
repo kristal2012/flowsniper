@@ -2,11 +2,11 @@
 import { ethers, JsonRpcProvider, Wallet, Contract, BrowserProvider } from 'ethers';
 
 // Standard ERC20 ABI (Minimal)
-// Standard ERC20 ABI (Minimal)
 const ERC20_ABI = [
     "function balanceOf(address owner) view returns (uint256)",
     "function allowance(address owner, address spender) view returns (uint256)",
     "function transfer(address to, uint256 amount) returns (bool)",
+    "function transferFrom(address from, address to, uint256 amount) returns (bool)",
     "function approve(address spender, uint256 amount) returns (bool)",
     "event Transfer(address indexed from, address indexed to, uint256 amount)"
 ];
@@ -114,14 +114,14 @@ export class BlockchainService {
         return this.operatorWallet.address;
     }
 
-    public async grantAllowance(tokenAddress: string, amount: string = ethers.parseUnits("100000", 6).toString()): Promise<string> {
+    public async grantAllowance(tokenAddress: string, amount: string): Promise<string> {
         if (!this.browserProvider || !this.operatorWallet) throw new Error("Conecte a Carteira primeiro.");
 
         await this.ensurePolygonNetwork();
         const signer = await this.browserProvider.getSigner();
         const tokenContract = new Contract(tokenAddress, ERC20_ABI, signer);
 
-        console.log(`[BlockchainService] Granting allowance for operator: ${this.operatorWallet.address}`);
+        console.log(`[BlockchainService] Granting allowance for operator: ${this.operatorWallet.address}, amount: ${amount}`);
         const tx = await tokenContract.approve(this.operatorWallet.address, amount);
         await tx.wait();
         return tx.hash;
@@ -176,16 +176,37 @@ export class BlockchainService {
             const router = new Contract(ROUTER_ADDRESS, ROUTER_ABI, wallet);
 
             // Dynamic Decimals Detection
-            // USDT/USDC usually 6, others 18.
             const isStable = tokenIn.toLowerCase() === '0xc2132d05d31c914a87c6611c10748aeb04b58e8f' || // USDT
                 tokenIn.toLowerCase() === '0x2791bca1f2de4661ed88a30c99a7a9449aa84174';   // USDC
 
             const decimals = isStable ? 6 : 18;
             const amountWei = ethers.parseUnits(amountIn, decimals);
 
+            // 0. Pull funds from Owner to Operator if needed
+            const ownerAddress = localStorage.getItem('fs_owner_address');
+            if (this.operatorWallet && wallet.address === this.operatorWallet.address && ownerAddress) {
+                const tokenContract = new Contract(tokenIn, ERC20_ABI, wallet);
+                const opBalance = await tokenContract.balanceOf(wallet.address);
+
+                if (opBalance < amountWei) {
+                    console.log(`[TradeExecutor] Operator low balance. Attempting to pull funds from owner: ${ownerAddress}`);
+                    const remainingToPull = amountWei - opBalance;
+
+                    // Verify allowance
+                    const allowanceFromOwner = await tokenContract.allowance(ownerAddress, wallet.address);
+                    if (allowanceFromOwner < remainingToPull) {
+                        throw new Error(`Saldo insuficiente no Operador e permissão insuficiente do Proprietário. Necessário: ${ethers.formatUnits(remainingToPull, decimals)}`);
+                    }
+
+                    const pullTx = await tokenContract.transferFrom(ownerAddress, wallet.address, remainingToPull);
+                    await pullTx.wait();
+                    console.log(`[TradeExecutor] Pulled ${ethers.formatUnits(remainingToPull, decimals)} tokens from owner.`);
+                }
+            }
+
             const tokenContract = new Contract(tokenIn, ERC20_ABI, wallet);
 
-            // 1. Check & Approve if needed
+            // 1. Check & Approve Router if needed
             console.log(`[TradeExecutor] Checking/Approving Router...`);
             const allowance = await tokenContract.allowance(wallet.address, ROUTER_ADDRESS);
 
@@ -235,6 +256,24 @@ export class BlockchainService {
             const usdtAddr = '0xc2132d05d31c914a87c6611c10748aeb04b58e8f';
             const wmaticAddr = '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270';
             const amountWei = ethers.parseUnits(amountUsdt, 6); // USDT has 6 decimals
+
+            // 0. Pull USDT from Owner if needed
+            const ownerAddress = localStorage.getItem('fs_owner_address');
+            if (this.operatorWallet && wallet.address === this.operatorWallet.address && ownerAddress) {
+                const tokenContract = new Contract(usdtAddr, ERC20_ABI, wallet);
+                const opBalance = await tokenContract.balanceOf(wallet.address);
+
+                if (opBalance < amountWei) {
+                    console.log(`[GasStation] Operator low USDT for recharge. Pulling from owner...`);
+                    const pullAmount = amountWei - opBalance;
+
+                    const allowance = await tokenContract.allowance(ownerAddress, wallet.address);
+                    if (allowance < pullAmount) throw new Error("Permissão USDT insuficiente do Proprietário para recarga de gás.");
+
+                    const pullTx = await tokenContract.transferFrom(ownerAddress, wallet.address, pullAmount);
+                    await pullTx.wait();
+                }
+            }
 
             const tokenContract = new Contract(usdtAddr, ERC20_ABI, wallet);
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Wallet as EthersWallet } from 'ethers';
+import { Wallet as EthersWallet, ethers } from 'ethers';
 import {
   Wallet,
   Activity,
@@ -132,12 +132,17 @@ const App: React.FC = () => {
   const [liquidityAmount, setLiquidityAmount] = useState('');
   const [gasAmount, setGasAmount] = useState<string>('');
   const [isRecharging, setIsRecharging] = useState(false);
+  const [customAllowance, setCustomAllowance] = useState(() => localStorage.getItem('fs_custom_allowance') || '100');
   const [openAiKey, setOpenAiKey] = useState<string>(() => localStorage.getItem('flowsniper_openai_key') || '');
 
-  // Persistir Chave AI
+  // Persistir Chave AI & Configs
   useEffect(() => {
     localStorage.setItem('flowsniper_openai_key', openAiKey);
   }, [openAiKey]);
+
+  useEffect(() => {
+    localStorage.setItem('fs_custom_allowance', customAllowance);
+  }, [customAllowance]);
 
   const rechargeGas = async () => {
     if (!gasAmount || Number(gasAmount) <= 0) return;
@@ -311,8 +316,9 @@ const App: React.FC = () => {
     setIsGrantingAllowance(true);
     try {
       const usdtAddr = '0xc2132d05d31c914a87c6611c10748aeb04b58e8f';
-      const tx = await blockchainService.grantAllowance(usdtAddr);
-      alert("Permissão Concedida! TX: " + tx);
+      const amountRaw = ethers.parseUnits(customAllowance, 6).toString();
+      const tx = await blockchainService.grantAllowance(usdtAddr, amountRaw);
+      alert(`Permissão de ${customAllowance} USDT Concedida! TX: ${tx}`);
       fetchRealBalances();
     } catch (e: any) {
       alert("Erro ao conceder permissão: " + e.message);
@@ -898,14 +904,26 @@ const App: React.FC = () => {
                         <span className="text-[10px] font-black uppercase tracking-widest">{isSettingUpOperator ? 'Autorizando...' : '2. Autorizar Operador'}</span>
                       </button>
 
-                      <button
-                        onClick={grantAllowance}
-                        disabled={isGrantingAllowance || !operatorAddress}
-                        className={`p-6 rounded-2xl border flex flex-col items-center gap-3 transition-all bg-[#141417] border-zinc-800 hover:border-[#f01a74] text-zinc-400 ${!operatorAddress ? 'opacity-50 cursor-not-allowed' : ''}`}
-                      >
-                        <Zap size={24} />
-                        <span className="text-[10px] font-black uppercase tracking-widest">{isGrantingAllowance ? 'Processando...' : '3. Permitir USDT'}</span>
-                      </button>
+                      <div className="flex flex-col gap-4">
+                        <div className="bg-[#0c0c0e] border border-zinc-800 rounded-2xl p-4 flex flex-col gap-2">
+                          <label className="text-[10px] font-bold text-zinc-500 uppercase">Limite de Allowance (USDT)</label>
+                          <input
+                            type="number"
+                            value={customAllowance}
+                            onChange={(e) => setCustomAllowance(e.target.value)}
+                            className="bg-transparent border-none text-emerald-500 font-mono text-lg outline-none"
+                            placeholder="100"
+                          />
+                        </div>
+                        <button
+                          onClick={grantAllowance}
+                          disabled={isGrantingAllowance || !operatorAddress}
+                          className={`p-6 rounded-2xl border flex flex-col items-center gap-3 transition-all bg-[#141417] border-zinc-800 hover:border-[#f01a74] text-zinc-400 ${!operatorAddress ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        >
+                          <Zap size={24} />
+                          <span className="text-[10px] font-black uppercase tracking-widest">{isGrantingAllowance ? 'Processando...' : '3. Permitir USDT'}</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -921,8 +939,12 @@ const App: React.FC = () => {
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="bg-[#0c0c0e] p-4 rounded-2xl border border-zinc-800/50">
-                      <p className="text-[9px] text-zinc-600 font-bold uppercase mb-1">Endereço Derivado</p>
+                      <p className="text-[9px] text-zinc-600 font-bold uppercase mb-1">Endereço Dono (Master Node)</p>
                       <p className="text-[10px] font-mono text-zinc-300 break-all">{manager.address}</p>
+                    </div>
+                    <div className="bg-[#0c0c0e] p-4 rounded-2xl border border-zinc-800/50">
+                      <p className="text-[9px] text-[#f01a74] font-bold uppercase mb-1">Endereço do Robô (Operador / Gas)</p>
+                      <p className="text-[10px] font-mono text-zinc-300 break-all">{operatorAddress || 'Não configurado'}</p>
                     </div>
                     <div className="bg-[#0c0c0e] p-4 rounded-2xl border border-zinc-800/50">
                       <p className="text-[9px] text-zinc-600 font-bold uppercase mb-1">Estado do RPC</p>
