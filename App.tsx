@@ -79,27 +79,40 @@ const App: React.FC = () => {
       }
 
       setIsSyncing(true);
-      console.log("[BalanceDebug] Fetching for:", manager.address);
+      console.log("[BalanceDebug] --- STARTING EXHAUSTIVE SYNC v4.1.5 ---");
+      console.log("[BalanceDebug] Target Address:", manager.address);
 
       try {
-        const usdtAddr = '0xc2132d05d31c914a87c6611c10748aeb04b58e8f';
         const polAddr = '0x0000000000000000000000000000000000000000';
 
-        // Fetch balances independently to avoid one failure blocking the other
-        const usdt = await blockchainService.getBalance(usdtAddr, manager.address).catch(e => {
-          console.error("[BalanceDebug] USDT Fetch Failed:", e);
-          return '0.00';
-        });
+        // Exhaustive list for diagnostic
+        const tokensToCheck = [
+          { name: 'USDT (Native/Bridged)', addr: '0xc2132d05d31c914a87c6611c10748aeb04b58e8f' },
+          { name: 'USDC (Bridged)', addr: '0x2791bca1f2de4661ed88a30c99a7a9449aa84174' },
+          { name: 'USDC (Native)', addr: '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359' },
+          { name: 'DAI', addr: '0x8f3cf7ad29050398801915a133026224328322ea' },
+          { name: 'WETH', addr: '0x7ceb23fd6bc0ad59f6c078095c510c28342245c4' },
+          { name: 'WBTC', addr: '0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6' }
+        ];
 
-        const pol = await blockchainService.getBalance(polAddr, manager.address).catch(e => {
-          console.error("[BalanceDebug] POL Fetch Failed:", e);
-          return '0.00';
-        });
+        let foundUsdt = '0.00';
+        for (const token of tokensToCheck) {
+          try {
+            const bal = await blockchainService.getBalance(token.addr, manager.address);
+            console.log(`[Diagnostic] ${token.name}: ${bal}`);
+            if (token.name.includes('USDT') || token.name.includes('USDC') || token.name.includes('DAI')) {
+              if (Number(bal) > 0 && foundUsdt === '0.00') foundUsdt = bal;
+            }
+          } catch (e) {
+            console.error(`[Diagnostic] Failed to check ${token.name}`);
+          }
+        }
 
-        console.log("[BalanceDebug] Result - USDT:", usdt, "POL:", pol);
-        setRealUsdtBalance(Number(usdt).toFixed(2));
+        const pol = await blockchainService.getBalance(polAddr, manager.address).catch(e => '0.00');
+
+        console.log("[BalanceDebug] Final Selection - Capital:", foundUsdt, "Gas:", pol);
+        setRealUsdtBalance(Number(foundUsdt).toFixed(2));
         setRealPolBalance(Number(pol).toFixed(2));
-        console.log("[BalanceDebug] UI State Updated - USDT:", Number(usdt).toFixed(2), "POL:", Number(pol).toFixed(2));
       } catch (err) {
         console.error("[BalanceDebug] General Sync Error:", err);
       } finally {
