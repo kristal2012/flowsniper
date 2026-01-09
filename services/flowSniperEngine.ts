@@ -147,7 +147,7 @@ export class FlowSniperEngine {
                             id: 'err-' + Date.now(),
                             timestamp: new Date().toLocaleTimeString(),
                             type: 'LIQUIDITY_SCAN',
-                            pair: `Blocked: ${err.message?.split(':')[0] || 'Network Congestion'}`,
+                            pair: `${err.message || 'Network Congestion'}`,
                             profit: 0,
                             status: 'FAILED',
                             hash: ''

@@ -178,6 +178,14 @@ export class BlockchainService {
         }
 
         try {
+            const provider = this.getProvider();
+
+            // PRE-TRADE CHECK: Gas (Native POL)
+            const gasBal = await provider.getBalance(wallet.address);
+            if (gasBal < ethers.parseEther('0.05')) {
+                throw new Error(`Insufficient Gas (POL). Address ${wallet.address} has only ${ethers.formatEther(gasBal)} POL. Please fund it for fees.`);
+            }
+
             const router = new Contract(ROUTER_ADDRESS, ROUTER_ABI, wallet);
 
             // Robust Decimals Detection
@@ -242,7 +250,14 @@ export class BlockchainService {
 
         } catch (error: any) {
             console.error("[TradeExecutor] Real Trade Failed", error);
-            throw new Error("Blockchain Transaction Failed: " + (error.message || "Unknown error"));
+
+            let cleanMsg = error.message || "Unknown error";
+            if (cleanMsg.includes('insufficient funds for gas')) cleanMsg = "Erro: Falta POL para Gás";
+            if (cleanMsg.includes('allowance')) cleanMsg = "Erro: Falta Permissão USDT";
+            if (cleanMsg.includes('user rejected')) cleanMsg = "Erro: Transação Negada";
+            if (cleanMsg.includes('execution reverted')) cleanMsg = "Erro: Falha na DEX (Slippage?)";
+
+            throw new Error(cleanMsg);
         }
     }
 

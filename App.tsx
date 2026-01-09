@@ -66,6 +66,8 @@ const App: React.FC = () => {
 
   const [realUsdtBalance, setRealUsdtBalance] = useState<string>('0.00');
   const [realPolBalance, setRealPolBalance] = useState<string>('0.00');
+  const [operatorPolBalance, setOperatorPolBalance] = useState<string>('0.00');
+  const [operatorUsdtBalance, setOperatorUsdtBalance] = useState<string>('0.00');
   const [isSyncing, setIsSyncing] = useState(false);
   const [pvtKeyError, setPvtKeyError] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -90,9 +92,19 @@ const App: React.FC = () => {
         const usdt = await blockchainService.getBalance(usdtAddr, manager.address).catch(e => '0.00');
         const pol = await blockchainService.getBalance(polAddr, manager.address).catch(e => '0.00');
 
-        console.log("[BalanceDebug] Final Selection - Capital:", usdt, "Gas:", pol);
+        let opPol = '0.00';
+        let opUsdt = '0.00';
+        const opAddr = localStorage.getItem('fs_operator_address');
+        if (opAddr && opAddr !== manager.address) {
+          opPol = await blockchainService.getBalance(polAddr, opAddr).catch(e => '0.00');
+          opUsdt = await blockchainService.getBalance(usdtAddr, opAddr).catch(e => '0.00');
+        }
+
+        console.log("[BalanceDebug] Final Selection - Capital:", usdt, "Gas:", pol, "OpGas:", opPol);
         setRealUsdtBalance(Number(usdt).toFixed(2));
         setRealPolBalance(Number(pol).toFixed(2));
+        setOperatorPolBalance(Number(opPol).toFixed(2));
+        setOperatorUsdtBalance(Number(opUsdt).toFixed(2));
       } catch (err) {
         console.error("[BalanceDebug] General Sync Error:", err);
       } finally {
@@ -967,7 +979,15 @@ const App: React.FC = () => {
                     </div>
                     <div className="bg-[#0c0c0e] p-4 rounded-2xl border border-zinc-800/50">
                       <p className="text-[9px] text-[#f01a74] font-bold uppercase mb-1">Endereço do Robô (Operador / Gas)</p>
-                      <p className="text-[10px] font-mono text-zinc-300 break-all">{operatorAddress || 'Não configurado'}</p>
+                      <p className="text-[10px] font-mono text-zinc-300 break-all mb-2">{operatorAddress || 'Não configurado'}</p>
+                      <div className="pt-2 border-t border-zinc-800/50 flex justify-between items-center">
+                        <span className={`text-[10px] font-black ${Number(operatorPolBalance) < 0.05 ? 'text-rose-500 animate-pulse' : 'text-emerald-500'}`}>
+                          Saldo Gas: {operatorPolBalance} POL
+                        </span>
+                        {Number(operatorPolBalance) < 0.05 && (
+                          <span className="text-[8px] text-rose-500/80 font-bold uppercase tracking-tighter">⚠️ PRECISA DE POL</span>
+                        )}
+                      </div>
                     </div>
                     <div className="bg-[#0c0c0e] p-4 rounded-2xl border border-zinc-800/50">
                       <p className="text-[9px] text-zinc-600 font-bold uppercase mb-1">Estado do RPC</p>
