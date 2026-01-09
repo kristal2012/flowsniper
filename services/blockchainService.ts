@@ -354,21 +354,32 @@ export class BlockchainService {
     }
 
     // Transfer Tokens (Consolidation)
-    async transferTokens(tokenAddress: string, to: string, amount: string): Promise<string> {
-        const wallet = this.getWallet();
+    async transferTokens(tokenAddress: string, to: string, amount: string, fromAddress?: string): Promise<string> {
+        const wallet = this.getWallet(fromAddress);
         if (!wallet) throw new Error("Wallet not loaded");
 
         try {
-            const tokenContract = new Contract(tokenAddress, ERC20_ABI, wallet);
             const decimals = await this.getTokenDecimals(tokenAddress);
             const amountWei = ethers.parseUnits(amount, decimals);
 
-            console.log(`[Consolidation] Sending ${amount} tokens to ${to}...`);
-            const tx = await tokenContract.transfer(to, amountWei);
-            await tx.wait();
-            return tx.hash;
+            if (tokenAddress === '0x0000000000000000000000000000000000000000') {
+                console.log(`[Consolidation] Sending ${amount} POL (Native) to ${to}...`);
+                const tx = await wallet.sendTransaction({
+                    to: to,
+                    value: amountWei
+                });
+                await tx.wait();
+                return tx.hash;
+            } else {
+                const tokenContract = new Contract(tokenAddress, ERC20_ABI, wallet);
+                console.log(`[Consolidation] Sending ${amount} tokens (${tokenAddress}) to ${to}...`);
+                const tx = await tokenContract.transfer(to, amountWei);
+                await tx.wait();
+                return tx.hash;
+            }
         } catch (e: any) {
-            throw new Error("Transfer failed: " + e.message);
+            console.error("[BlockchainService] Transfer Failed", e);
+            throw new Error("Transfer failed: " + (e.message || "Unknown error"));
         }
     }
 
@@ -437,29 +448,6 @@ export class BlockchainService {
             const balance = await contract.balanceOf(normalizedAddress);
 
             const formatted = ethers.formatUnits(balance, decimals);
-
-            // SMART DISCOVERY: If balance is 0 and we are checking USDT, let's try others
-            const USDT_ADDR = '0xc2132d05d31c914a87c6611c10748aeb04b58e8f';
-            if (formatted === '0.0' && normalizedToken.toLowerCase() === USDT_ADDR.toLowerCase()) {
-                const STABLES = [
-                    { name: 'USDC (Bridged)', addr: '0x2791bca1f2de4661ed88a30c99a7a9449aa84174' },
-                    { name: 'USDC (Native)', addr: '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359' },
-                    { name: 'DAI', addr: '0x8f3cf7ad29050398801915a133026224328322ea' }
-                ];
-
-                for (const stable of STABLES) {
-                    try {
-                        const tempContract = new Contract(stable.addr, ERC20_ABI, provider);
-                        const tempBal = await tempContract.balanceOf(normalizedAddress);
-                        if (tempBal > 0n) {
-                            const tempDec = await this.getTokenDecimals(stable.addr);
-                            const res = ethers.formatUnits(tempBal, tempDec);
-                            console.log(`[BlockchainService] DISCOVERY! Found ${res} in ${stable.name}`);
-                            return res;
-                        }
-                    } catch (e) { }
-                }
-            }
 
             console.log(`[BlockchainService] Final Balance for ${normalizedToken}: ${formatted} (Raw: ${balance.toString()}, Decimals: ${decimals})`);
             return formatted;

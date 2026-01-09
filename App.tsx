@@ -88,7 +88,6 @@ const App: React.FC = () => {
         const usdtAddr = '0xc2132d05d31c914a87c6611c10748aeb04b58e8f';
         const polAddr = '0x0000000000000000000000000000000000000000';
 
-        // Discovery is now handled internally by blockchainService
         const usdt = await blockchainService.getBalance(usdtAddr, manager.address).catch(e => '0.00');
         const pol = await blockchainService.getBalance(polAddr, manager.address).catch(e => '0.00');
 
@@ -100,8 +99,34 @@ const App: React.FC = () => {
           opUsdt = await blockchainService.getBalance(usdtAddr, opAddr).catch(e => '0.00');
         }
 
-        // Expanded Discovery for other assets in BOTH wallets (Owner and Operator)
-        const otherTokens = [
+        // --- CALCULATION LOGIC: EXPLICIT SUM ---
+        // We scan for specific tokens and add their value. 
+        // We NO LONGER blindly trust "usdt" because discovery was removed from getBalance.
+
+        const stablesToScan = [
+          { name: 'USDC Native', addr: '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359' },
+          { name: 'USDC Bridged', addr: '0x2791bca1f2de4661ed88a30c99a7a9449aa84174' },
+          { name: 'DAI', addr: '0x8f3cf7ad29050398801915a133026224328322ea' }
+        ];
+
+        let totalOtherStablesInUsdt = 0;
+        const addressesToScan = [manager.address];
+        if (opAddr && opAddr !== manager.address) addressesToScan.push(opAddr);
+
+        for (const addr of addressesToScan) {
+          for (const s of stablesToScan) {
+            try {
+              const bal = await blockchainService.getBalance(s.addr, addr).catch(() => '0');
+              if (Number(bal) > 0.01) {
+                totalOtherStablesInUsdt += Number(bal); // Stable to USDT parity assumed
+                console.log(`[BalanceFix] Found ${bal} ${s.name} in ${addr === opAddr ? 'Operator' : 'Owner'}`);
+              }
+            } catch (e) { }
+          }
+        }
+
+        // Non-stable assets scan (Market Value)
+        const volatileTokens = [
           { name: 'WETH', addr: '0x7ceb23fd6bc0ad59f6c078095c510c28342245c4' },
           { name: 'WBTC', addr: '0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6' },
           { name: 'AAVE', addr: '0xd6df30500db6e36d4336069904944f2b93652618' },
@@ -109,31 +134,27 @@ const App: React.FC = () => {
           { name: 'LINK', addr: '0x53e0bca35ec356bd5dddfebbd1fc0fd03fabad39' },
           { name: 'QUICK', addr: '0xf28768daa238a2e52b21697284f1076f8a02c98d' },
           { name: 'SOL', addr: '0x7df36098c4f923b7596ad881a70428f62c0199ba' },
-          { name: 'USDC', addr: '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359' },
           { name: 'WMATIC', addr: '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270' }
         ];
 
         let portfolioValue = 0;
-        const addressesToScan = [manager.address];
-        if (opAddr && opAddr !== manager.address) addressesToScan.push(opAddr);
-
         for (const addr of addressesToScan) {
-          for (const t of otherTokens) {
+          for (const t of volatileTokens) {
             try {
               const bal = await blockchainService.getBalance(t.addr, addr).catch(() => '0');
               if (Number(bal) > 0.000001) {
                 const price = await fetchCurrentPrice(t.name + 'USDT').catch(() => 0);
                 portfolioValue += Number(bal) * price;
-                console.log(`[PortfolioDiscovery] Found ${bal} ${t.name} in ${addr === opAddr ? 'Operator' : 'Owner'} ($${(Number(bal) * price).toFixed(2)})`);
               }
             } catch (e) { }
           }
         }
 
-        console.log("[BalanceDebug] Final Sync - USDT:", usdt, "OpUSDT:", opUsdt, "Portfolio Assets:", portfolioValue);
+        console.log("[BalanceDebug] Final Sync - USDT:", usdt, "OpUSDT:", opUsdt, "Other Stables:", totalOtherStablesInUsdt, "Volatile Assets:", portfolioValue);
 
-        // Total Capital = (Owner USDT + Operator USDT) + Portfolio Assets
-        const totalCapital = Number(usdt) + Number(opUsdt) + portfolioValue;
+        // Total Capital = (Owner USDT + Operator USDT) + (Owner/Op Other Stables) + Volatile Portfolio
+        const totalCapital = Number(usdt) + Number(opUsdt) + totalOtherStablesInUsdt + portfolioValue;
+
         setRealUsdtBalance(totalCapital.toFixed(2));
         setRealPolBalance(Number(pol).toFixed(2));
         setOperatorPolBalance(Number(opPol).toFixed(2));
@@ -194,8 +215,10 @@ const App: React.FC = () => {
         { name: 'LINK', addr: '0x53e0bca35ec356bd5dddfebbd1fc0fd03fabad39' },
         { name: 'QUICK', addr: '0xf28768daa238a2e52b21697284f1076f8a02c98d' },
         { name: 'SOL', addr: '0x7df36098c4f923b7596ad881a70428f62c0199ba' },
-        { name: 'USDC', addr: '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359' },
-        { name: 'WMATIC', addr: '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270' }
+        { name: 'WMATIC', addr: '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270' },
+        { name: 'USDC (Native)', addr: '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359' },
+        { name: 'USDC (Bridged)', addr: '0x2791bca1f2de4661ed88a30c99a7a9449aa84174' },
+        { name: 'DAI', addr: '0x8f3cf7ad29050398801915a133026224328322ea' }
       ];
 
       const usdtAddr = '0xc2132d05d31c914a87c6611c10748aeb04b58e8f';
@@ -219,18 +242,39 @@ const App: React.FC = () => {
         }
       }
 
-      // Final: Move ALL USDT from Operator to Master for consolidation
+      // Final: Move ALL stables from Operator to Master for consolidation
       if (opAddr !== ownerAddr) {
-        const opUsdtFinal = await blockchainService.getBalance(usdtAddr, opAddr).catch(() => '0');
-        if (Number(opUsdtFinal) > 0.1) {
-          console.log(`[Consolidate] Moving ${opUsdtFinal} USDT from Operator to Master Wallet...`);
-          await blockchainService.transferTokens(usdtAddr, ownerAddr, opUsdtFinal).catch(e => {
-            console.error("Failed to consolidate USDT:", e);
-          });
+        const stablesToMove = [
+          { name: 'USDT', addr: usdtAddr },
+          { name: 'USDC Native', addr: '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359' },
+          { name: 'USDC Bridged', addr: '0x2791bca1f2de4661ed88a30c99a7a9449aa84174' },
+          { name: 'DAI', addr: '0x8f3cf7ad29050398801915a133026224328322ea' }
+        ];
+
+        for (const s of stablesToMove) {
+          const bal = await blockchainService.getBalance(s.addr, opAddr).catch(() => '0');
+          if (Number(bal) > 0.01) {
+            console.log(`[Consolidate] Moving ${bal} ${s.name} from Operator ${opAddr} to Master Wallet...`);
+            await blockchainService.transferTokens(s.addr, ownerAddr, bal, opAddr).catch(e => {
+              console.error(`Failed to consolidate ${s.name}:`, e);
+            });
+          }
+        }
+
+        // Also move POL (Native) - Leave tiny bit for gas, or move all if possible
+        const polBal = await blockchainService.getBalance('0x0000000000000000000000000000000000000000', opAddr).catch(() => '0');
+        if (Number(polBal) > 0.1) {
+          console.log(`[Consolidate] Moving remaining POL from Operator to Master...`);
+          const moveAmount = (Number(polBal) - 0.05).toFixed(4);
+          if (Number(moveAmount) > 0) {
+            await blockchainService.transferTokens('0x0000000000000000000000000000000000000000', ownerAddr, moveAmount, opAddr).catch(e => {
+              console.error("Failed to consolidate POL:", e);
+            });
+          }
         }
       }
 
-      alert("CONSOLIDAÇÃO CONCLUÍDA! Seu capital foi convertido para USDT e enviado para sua Carteira Master (Rabby). Dê F5 se necessário.");
+      alert("CONSOLIDAÇÃO CONCLUÍDA! Seu capital foi convertido para USDT e enviado para sua Carteira Master (Rabby). Se algum valor ainda não apareceu na Rabby, verifique se ele está em USDC ou DAI no seu endereço principal.");
       fetchRealBalances();
     } catch (err: any) {
       alert("Erro na Liquidação: " + (err.message || "Desconhecido"));
@@ -1090,23 +1134,42 @@ const App: React.FC = () => {
                     <button onClick={fetchRealBalances} className="text-[10px] font-bold text-zinc-500 hover:text-white uppercase tracking-tighter transition-colors">Testar agora</button>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="bg-[#0c0c0e] p-4 rounded-2xl border border-zinc-800/50">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="bg-[#0c0c0e] p-6 rounded-2xl border border-zinc-800/50 space-y-3">
                       <p className="text-[9px] text-zinc-600 font-bold uppercase mb-1">Endereço Dono (Master Node)</p>
                       <p className="text-[10px] font-mono text-zinc-300 break-all">{manager.address}</p>
-                    </div>
-                    <div className="bg-[#0c0c0e] p-4 rounded-2xl border border-zinc-800/50">
-                      <p className="text-[9px] text-[#f01a74] font-bold uppercase mb-1">Endereço do Robô (Operador / Gas)</p>
-                      <p className="text-[10px] font-mono text-zinc-300 break-all mb-2">{operatorAddress || 'Não configurado'}</p>
-                      <div className="pt-2 border-t border-zinc-800/50 flex justify-between items-center">
-                        <span className={`text-[10px] font-black ${Number(operatorPolBalance) < 0.05 ? 'text-rose-500 animate-pulse' : 'text-emerald-500'}`}>
-                          Saldo Gas: {operatorPolBalance} POL
-                        </span>
-                        {Number(operatorPolBalance) < 0.05 && (
-                          <span className="text-[8px] text-rose-500/80 font-bold uppercase tracking-tighter">⚠️ PRECISA DE POL</span>
-                        )}
+                      <div className="pt-3 border-t border-zinc-800/20 grid grid-cols-2 gap-2 text-[10px]">
+                        <span className="text-zinc-500">USDT (Rabby):</span>
+                        <span className="text-emerald-500 font-bold text-right">{realUsdtBalance}</span>
+                        <span className="text-zinc-500">POL (Gas Master):</span>
+                        <span className="text-white font-bold text-right">{realPolBalance}</span>
                       </div>
                     </div>
+
+                    <div className="bg-[#0c0c0e] p-6 rounded-2xl border border-zinc-800/50 space-y-3">
+                      <p className="text-[9px] text-[#f01a74] font-bold uppercase mb-1">Endereço do Robô (Operador / Gas)</p>
+                      <p className="text-[10px] font-mono text-zinc-300 break-all">{operatorAddress || 'Não configurado'}</p>
+                      <div className="pt-3 border-t border-zinc-800/20 grid grid-cols-2 gap-2 text-[10px]">
+                        <span className="text-zinc-500">Saldo USDT:</span>
+                        <span className={`font-bold text-right ${Number(operatorUsdtBalance) > 0 ? 'text-emerald-500' : 'text-zinc-600'}`}>{operatorUsdtBalance}</span>
+                        <span className="text-zinc-500">Saldo POL:</span>
+                        <span className={`font-bold text-right ${Number(operatorPolBalance) < 0.1 ? 'text-rose-500' : 'text-emerald-500'}`}>{operatorPolBalance}</span>
+                      </div>
+                    </div>
+
+                    <div className="md:col-span-2 bg-blue-500/5 p-4 rounded-xl border border-blue-500/20">
+                      <p className="text-[10px] text-blue-400 font-black uppercase mb-2">Descoberta de Ativos (Transparência Total)</p>
+                      <p className="text-[10px] text-zinc-500 leading-relaxed font-medium">
+                        O saldo total de <span className="text-white">{realUsdtBalance} USDT</span> mostrado no Painel é a soma exata de:
+                        <br />• <strong>USDT Master:</strong> {Number((manager.address && realUsdtBalance !== '0.00') ? realUsdtBalance : 0).toFixed(2)} (Rabby)
+                        <br />• <strong>Stablecoins Auxiliares:</strong> USDC Native, USDC Bridged e DAI em ambas as carteiras.
+                        <br />• <strong>Portfólio em HOLD:</strong> Valor de mercado de outros tokens (BTC, ETH, etc) que o robô está operando.
+                        <br /><br />
+                        <strong>Por que meu saldo na Rabby parece menor?</strong> A Rabby por padrão mostra apenas o token principal. Seus fundos podem estar em USDC ou DAI.
+                        Use o botão vermelho de Resgate na aba 'Gestão de Liquidez' para converter tudo em USDT se desejar.
+                      </p>
+                    </div>
+
                     <div className="bg-[#0c0c0e] p-4 rounded-2xl border border-zinc-800/50">
                       <p className="text-[9px] text-zinc-600 font-bold uppercase mb-1">Estado do RPC</p>
                       <p className={`text-[10px] font-bold uppercase ${syncError ? 'text-rose-500' : 'text-emerald-500'}`}>
