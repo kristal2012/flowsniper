@@ -83,35 +83,15 @@ const App: React.FC = () => {
       console.log("[BalanceDebug] Target Address:", manager.address);
 
       try {
+        const usdtAddr = '0xc2132d05d31c914a87c6611c10748aeb04b58e8f';
         const polAddr = '0x0000000000000000000000000000000000000000';
 
-        // Exhaustive list for diagnostic
-        const tokensToCheck = [
-          { name: 'USDT (Native/Bridged)', addr: '0xc2132d05d31c914a87c6611c10748aeb04b58e8f' },
-          { name: 'USDC (Bridged)', addr: '0x2791bca1f2de4661ed88a30c99a7a9449aa84174' },
-          { name: 'USDC (Native)', addr: '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359' },
-          { name: 'DAI', addr: '0x8f3cf7ad29050398801915a133026224328322ea' },
-          { name: 'WETH', addr: '0x7ceb23fd6bc0ad59f6c078095c510c28342245c4' },
-          { name: 'WBTC', addr: '0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6' }
-        ];
-
-        let foundUsdt = '0.00';
-        for (const token of tokensToCheck) {
-          try {
-            const bal = await blockchainService.getBalance(token.addr, manager.address);
-            console.log(`[Diagnostic] ${token.name}: ${bal}`);
-            if (token.name.includes('USDT') || token.name.includes('USDC') || token.name.includes('DAI')) {
-              if (Number(bal) > 0 && foundUsdt === '0.00') foundUsdt = bal;
-            }
-          } catch (e) {
-            console.error(`[Diagnostic] Failed to check ${token.name}`);
-          }
-        }
-
+        // Discovery is now handled internally by blockchainService
+        const usdt = await blockchainService.getBalance(usdtAddr, manager.address).catch(e => '0.00');
         const pol = await blockchainService.getBalance(polAddr, manager.address).catch(e => '0.00');
 
-        console.log("[BalanceDebug] Final Selection - Capital:", foundUsdt, "Gas:", pol);
-        setRealUsdtBalance(Number(foundUsdt).toFixed(2));
+        console.log("[BalanceDebug] Final Selection - Capital:", usdt, "Gas:", pol);
+        setRealUsdtBalance(Number(usdt).toFixed(2));
         setRealPolBalance(Number(pol).toFixed(2));
       } catch (err) {
         console.error("[BalanceDebug] General Sync Error:", err);
@@ -154,6 +134,7 @@ const App: React.FC = () => {
   const [gasAmount, setGasAmount] = useState<string>('');
   const [isRecharging, setIsRecharging] = useState(false);
   const [customAllowance, setCustomAllowance] = useState(() => localStorage.getItem('fs_custom_allowance') || '100');
+  const [tradeAmount, setTradeAmount] = useState(() => localStorage.getItem('fs_trade_amount') || '3.0');
   const [openAiKey, setOpenAiKey] = useState<string>(() => localStorage.getItem('flowsniper_openai_key') || '');
 
   // Persistir Chave AI & Configs
@@ -164,6 +145,10 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('fs_custom_allowance', customAllowance);
   }, [customAllowance]);
+
+  useEffect(() => {
+    localStorage.setItem('fs_trade_amount', tradeAmount);
+  }, [tradeAmount]);
 
   const rechargeGas = async () => {
     if (!gasAmount || Number(gasAmount) <= 0) return;
@@ -244,7 +229,7 @@ const App: React.FC = () => {
   // --- LOGIC MERGE: Start/Stop Engine ---
   useEffect(() => {
     if (botActive && sniperRef.current) {
-      sniperRef.current.start(mode, demoGasBalance, demoBalance, analysis);
+      sniperRef.current.start(mode, demoGasBalance, demoBalance, analysis, tradeAmount);
     } else if (sniperRef.current) {
       sniperRef.current.stop();
     }
@@ -984,8 +969,27 @@ const App: React.FC = () => {
 
                   <div className="p-4 bg-zinc-900/50 rounded-xl border border-zinc-800/50">
                     <p className="text-[10px] text-zinc-500 leading-relaxed font-medium italic">
-                      💡 Se o endereço acima NÃO for o mesmo da sua MetaMask, sua Chave Privada está incorreta ou pertence a outra conta.
+                      💡 Configuração de Operação: Valor por Snipe: <span className="text-emerald-500 font-bold">{tradeAmount} USDT</span>.
                     </p>
+                  </div>
+                </div>
+
+                {/* Aba de Ajustes de Trade */}
+                <div className="mt-8 p-12 bg-[#0c0c0e] border border-zinc-800 rounded-[3rem] space-y-8">
+                  <h3 className="text-xl font-black italic uppercase tracking-tighter">Parâmetros do Motor</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Valor por Operação (USDT)</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={tradeAmount}
+                        onChange={(e) => setTradeAmount(e.target.value)}
+                        className="w-full bg-black border border-zinc-800 rounded-2xl p-5 font-mono text-xl text-emerald-500 outline-none focus:border-[#f01a74]/50 transition-all"
+                        placeholder="3.0"
+                      />
+                      <p className="text-[9px] text-zinc-600">O robô usará este valor fixo para cada tentativa de captura.</p>
+                    </div>
                   </div>
                 </div>
               </div>

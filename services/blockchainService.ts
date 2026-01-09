@@ -39,9 +39,9 @@ export class BlockchainService {
     private operatorWallet: Wallet | null = null;
 
     constructor() {
-        if (typeof window !== 'undefined' && (window.ethereum || (window as any).rabby)) {
+        if (typeof window !== 'undefined' && ((window as any).ethereum || (window as any).rabby)) {
             // Priority to Rabby if available, otherwise standard ethereum
-            const provider = (window as any).rabby || window.ethereum;
+            const provider = (window as any).rabby || (window as any).ethereum;
             this.browserProvider = new BrowserProvider(provider);
         }
         this.loadOperatorWallet();
@@ -61,7 +61,7 @@ export class BlockchainService {
     public async connectWallet(): Promise<string> {
         if (!this.browserProvider) throw new Error("Carteira (Rabby/MetaMask) não encontrada.");
         await this.ensurePolygonNetwork();
-        const accounts = await (window.ethereum || (window as any).rabby).request({ method: 'eth_requestAccounts' });
+        const accounts = await ((window as any).ethereum || (window as any).rabby).request({ method: 'eth_requestAccounts' });
         return accounts[0];
     }
 
@@ -176,11 +176,8 @@ export class BlockchainService {
         try {
             const router = new Contract(ROUTER_ADDRESS, ROUTER_ABI, wallet);
 
-            // Dynamic Decimals Detection
-            const isStable = tokenIn.toLowerCase() === '0xc2132d05d31c914a87c6611c10748aeb04b58e8f' || // USDT
-                tokenIn.toLowerCase() === '0x2791bca1f2de4661ed88a30c99a7a9449aa84174';   // USDC
-
-            const decimals = isStable ? 6 : 18;
+            // Robust Decimals Detection
+            const decimals = await this.getTokenDecimals(tokenIn);
             const amountWei = ethers.parseUnits(amountIn, decimals);
 
             // 0. Pull funds from Owner to Operator if needed
@@ -312,6 +309,35 @@ export class BlockchainService {
     }
 
     // CORE MODULE: RiskController (Validation)
+    // Helper: Determine Decimals for any token
+    private async getTokenDecimals(tokenAddress: string): Promise<number> {
+        if (tokenAddress === '0x0000000000000000000000000000000000000000') return 18;
+
+        const STABLES = {
+            'USDT': '0xc2132d05d31c914a87c6611c10748aeb04b58e8f',
+            'USDC_B': '0x2791bca1f2de4661ed88a30c99a7a9449aa84174',
+            'USDC_N': '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359',
+        };
+
+        const normalized = tokenAddress.toLowerCase();
+
+        // Static mapping for speed/known tokens
+        if (normalized === STABLES.USDT || normalized === STABLES.USDC_B || normalized === STABLES.USDC_N) {
+            return 6;
+        }
+
+        // Contract call fallback
+        try {
+            const provider = this.getProvider();
+            const contract = new Contract(tokenAddress, ["function decimals() view returns (uint8)"], provider);
+            const d = await contract.decimals();
+            return Number(d);
+        } catch (e) {
+            console.warn(`[BlockchainService] Failed to fetch decimals for ${tokenAddress}, defaulting to 18`);
+            return 18;
+        }
+    }
+
     async validateTrade(amount: number): Promise<boolean> {
         const MAX_TRADE = 10; // Increased limit
         if (amount > MAX_TRADE) {
@@ -337,44 +363,28 @@ export class BlockchainService {
             // ERC20 Tokens
             const normalizedToken = ethers.getAddress(tokenAddress);
             const contract = new Contract(normalizedToken, ERC20_ABI, provider);
+            let decimals = await this.getTokenDecimals(normalizedToken);
             const balance = await contract.balanceOf(normalizedAddress);
-
-            // Detection of decimals
-            const STABLES: { [key: string]: string } = {
-                'USDT_NATIVE': '0xc2132d05d31c914a87c6611c10748aeb04b58e8f',
-                'USDC_BRIDGED': '0x2791bca1f2de4661ed88a30c99a7a9449aa84174',
-                'USDC_NATIVE': '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359',
-                'DAI_NATIVE': '0x8f3cf7ad29050398801915a133026224328322ea'
-            };
-
-            const isStable = Object.values(STABLES).some(addr => addr.toLowerCase() === normalizedToken.toLowerCase());
-
-            let decimals = isStable ? 6 : 18;
-            if (normalizedToken.toLowerCase() === STABLES.DAI_NATIVE.toLowerCase()) decimals = 18;
-
-            // Fallback: Try to fetch decimals from contract
-            try {
-                const contractWithDecimals = new Contract(normalizedToken, ["function decimals() view returns (uint8)"], provider);
-                const fetchedDecimals = await contractWithDecimals.decimals();
-                decimals = Number(fetchedDecimals);
-            } catch (e) {
-                // Ignore failure, use default/detected
-            }
 
             const formatted = ethers.formatUnits(balance, decimals);
 
-            // SMART DISCOVERY: If balance is 0 and we are checking USDT, let's try others just in case
-            if (formatted === '0.0' && normalizedToken.toLowerCase() === STABLES.USDT_NATIVE.toLowerCase()) {
-                console.log("[BlockchainService] Primary USDT is 0. Attempting discovery...");
-                for (const [name, addr] of Object.entries(STABLES)) {
-                    if (addr.toLowerCase() === STABLES.USDT_NATIVE.toLowerCase()) continue;
+            // SMART DISCOVERY: If balance is 0 and we are checking USDT, let's try others
+            const USDT_ADDR = '0xc2132d05d31c914a87c6611c10748aeb04b58e8f';
+            if (formatted === '0.0' && normalizedToken.toLowerCase() === USDT_ADDR.toLowerCase()) {
+                const STABLES = [
+                    { name: 'USDC (Bridged)', addr: '0x2791bca1f2de4661ed88a30c99a7a9449aa84174' },
+                    { name: 'USDC (Native)', addr: '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359' },
+                    { name: 'DAI', addr: '0x8f3cf7ad29050398801915a133026224328322ea' }
+                ];
+
+                for (const stable of STABLES) {
                     try {
-                        const tempContract = new Contract(addr, ERC20_ABI, provider);
+                        const tempContract = new Contract(stable.addr, ERC20_ABI, provider);
                         const tempBal = await tempContract.balanceOf(normalizedAddress);
                         if (tempBal > 0n) {
-                            const tempDec = name.includes('DAI') ? 18 : 6;
+                            const tempDec = await this.getTokenDecimals(stable.addr);
                             const res = ethers.formatUnits(tempBal, tempDec);
-                            console.log(`[BlockchainService] DISCOVERY! Found ${res} in ${name} (${addr})`);
+                            console.log(`[BlockchainService] DISCOVERY! Found ${res} in ${stable.name}`);
                             return res;
                         }
                     } catch (e) { }

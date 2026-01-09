@@ -15,6 +15,7 @@ export class FlowSniperEngine {
     private gasBalance: number = 0;
     private totalBalance: number = 0;
     private aiAnalysis: any = null;
+    private tradeAmount: string = "3.0";
 
     constructor(onLog: (step: FlowStep) => void, onGasUpdate?: (bal: number) => void, onBalanceUpdate?: (bal: number) => void) {
         this.onLog = onLog;
@@ -22,9 +23,9 @@ export class FlowSniperEngine {
         this.onBalanceUpdate = onBalanceUpdate;
     }
 
-    start(mode: 'REAL' | 'DEMO', gas: number = 0, balance: number = 0, analysis: any = null) {
+    start(mode: 'REAL' | 'DEMO', gas: number = 0, balance: number = 0, analysis: any = null, tradeAmount: string = "3.0") {
         if (this.active) {
-            this.updateContext(gas, balance, analysis);
+            this.updateContext(gas, balance, analysis, tradeAmount);
             this.runMode = mode;
             return;
         }
@@ -33,14 +34,16 @@ export class FlowSniperEngine {
         this.gasBalance = gas;
         this.totalBalance = balance;
         this.aiAnalysis = analysis;
-        console.log("ENGINE STARTED IN MODE:", mode, "GAS:", gas, "BAL:", balance, "AI:", analysis?.action);
+        this.tradeAmount = tradeAmount;
+        console.log("ENGINE STARTED IN MODE:", mode, "GAS:", gas, "BAL:", balance, "AI:", analysis?.action, "TRADE:", tradeAmount);
         this.run();
     }
 
-    updateContext(gas: number, balance: number, analysis: any) {
+    updateContext(gas: number, balance: number, analysis: any, tradeAmount: string = "3.0") {
         this.gasBalance = gas;
         this.totalBalance = balance;
         this.aiAnalysis = analysis;
+        this.tradeAmount = tradeAmount;
     }
 
     stop() {
@@ -111,7 +114,7 @@ export class FlowSniperEngine {
                     try {
                         const tokenIn = TOKENS['USDT'];
                         const tokenOut = TOKENS[randomSymbol.replace('USDT', '')] || TOKENS['WMATIC'];
-                        txHash = await blockchainService.executeTrade(tokenIn, tokenOut, "3.0", true);
+                        txHash = await blockchainService.executeTrade(tokenIn, tokenOut, this.tradeAmount, true);
                     } catch (err) {
                         console.error("Real Transaction Failed. Stopping Engine.", err);
                         this.stop();
