@@ -57,6 +57,7 @@ export type FlowOperation =
   | 'CROSS_DEX_LIQUIDITY'
   | 'ROUTE_OPTIMIZATION'
   | 'LIQUIDITY_SCAN'
+  | 'ASSET_CONSOLIDATION'
   | 'SCAN_PULSE';
 
 export const SUPPORTED_PAIRS = [

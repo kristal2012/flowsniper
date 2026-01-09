@@ -2,6 +2,7 @@
 import { FlowStep, FlowOperation } from '../types';
 import { fetchCurrentPrice } from './marketDataService';
 import { blockchainService } from './blockchainService';
+import { ethers } from 'ethers';
 
 export class FlowSniperEngine {
     private active: boolean = false;
@@ -18,6 +19,7 @@ export class FlowSniperEngine {
     private tradeAmount: string = "3.0";
     private slippage: number = 0.005; // 0.5%
     private minProfit: number = 0.001; // 0.1%
+    private consolidationThreshold: number = 10.0;
 
     constructor(onLog: (step: FlowStep) => void, onGasUpdate?: (bal: number) => void, onBalanceUpdate?: (bal: number) => void) {
         this.onLog = onLog;
@@ -25,9 +27,9 @@ export class FlowSniperEngine {
         this.onBalanceUpdate = onBalanceUpdate;
     }
 
-    start(mode: 'REAL' | 'DEMO', gas: number = 0, balance: number = 0, analysis: any = null, tradeAmount: string = "3.0", slippage: number = 0.005, minProfit: number = 0.001) {
+    start(mode: 'REAL' | 'DEMO', gas: number = 0, balance: number = 0, analysis: any = null, tradeAmount: string = "3.0", slippage: number = 0.005, minProfit: number = 0.001, consolidationThreshold: number = 10.0) {
         if (this.active) {
-            this.updateContext(gas, balance, analysis, tradeAmount, slippage, minProfit);
+            this.updateContext(gas, balance, analysis, tradeAmount, slippage, minProfit, consolidationThreshold);
             this.runMode = mode;
             return;
         }
@@ -39,17 +41,19 @@ export class FlowSniperEngine {
         this.tradeAmount = tradeAmount;
         this.slippage = slippage;
         this.minProfit = minProfit;
-        console.log("ENGINE STARTED IN MODE:", mode, "GAS:", gas, "BAL:", balance, "AI:", analysis?.action, "TRADE:", tradeAmount, "SLIPPAGE:", slippage);
+        this.consolidationThreshold = consolidationThreshold;
+        console.log("ENGINE STARTED IN MODE:", mode, "GAS:", gas, "BAL:", balance, "AI:", analysis?.action, "TRADE:", tradeAmount, "SLIPPAGE:", slippage, "THRESHOLD:", consolidationThreshold);
         this.run();
     }
 
-    updateContext(gas: number, balance: number, analysis: any, tradeAmount: string = "3.0", slippage: number = 0.005, minProfit: number = 0.001) {
+    updateContext(gas: number, balance: number, analysis: any, tradeAmount: string = "3.0", slippage: number = 0.005, minProfit: number = 0.001, consolidationThreshold: number = 10.0) {
         this.gasBalance = gas;
         this.totalBalance = balance;
         this.aiAnalysis = analysis;
         this.tradeAmount = tradeAmount;
         this.slippage = slippage;
         this.minProfit = minProfit;
+        this.consolidationThreshold = consolidationThreshold;
     }
 
     stop() {
@@ -156,6 +160,7 @@ export class FlowSniperEngine {
 
                 let txHash = '';
                 let actualProfit = estimatedNetProfit;
+                let successTrade = false;
 
                 if (this.runMode === 'REAL') {
                     try {
@@ -179,6 +184,7 @@ export class FlowSniperEngine {
 
                             // Calculate actual profit (approximate for UI)
                             actualProfit = expectedUsdtBack - Number(this.tradeAmount) - GAS_ESTIMATE_USDT;
+                            successTrade = true;
                         } else {
                             txHash = buyHash;
                             actualProfit = -0.1; // Failed to buy enough?
@@ -216,6 +222,38 @@ export class FlowSniperEngine {
                     status: 'SUCCESS',
                     hash: txHash
                 });
+
+                // --- AUTO CONSOLIDATION LOGIC ---
+                if (this.runMode === 'REAL' && successTrade && this.consolidationThreshold > 0) {
+                    try {
+                        const opAddr = blockchainService.getWalletAddress();
+                        const pvt = localStorage.getItem('fs_private_key');
+                        const ownerAddr = pvt ? new ethers.Wallet(pvt).address : null;
+
+                        // We need the owner address to transfer to. If not in localStorage, we can't do it.
+                        if (opAddr && ownerAddr && opAddr.toLowerCase() !== ownerAddr.toLowerCase()) {
+                            const usdtBal = await blockchainService.getBalance(TOKENS['USDT'], opAddr);
+
+                            if (Number(usdtBal) >= this.consolidationThreshold) {
+                                console.log(`[Consolidate] Threshold reached (${usdtBal} >= ${this.consolidationThreshold}). Transferring to Owner...`);
+                                this.onLog({
+                                    id: 'consolidate-' + Date.now(),
+                                    timestamp: new Date().toLocaleTimeString(),
+                                    type: 'ASSET_CONSOLIDATION',
+                                    pair: `Auto-Consolidating ${usdtBal} USDT...`,
+                                    profit: 0,
+                                    status: 'SUCCESS',
+                                    hash: ''
+                                });
+
+                                const transferHash = await blockchainService.transferTokens(TOKENS['USDT'], ownerAddr, usdtBal, opAddr);
+                                console.log(`[Consolidate] Success! Tx: ${transferHash}`);
+                            }
+                        }
+                    } catch (e) {
+                        console.error("[Consolidate] Auto-transfer failed", e);
+                    }
+                }
             }
 
             await new Promise(resolve => setTimeout(resolve, 2000));

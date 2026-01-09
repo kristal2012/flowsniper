@@ -199,6 +199,7 @@ const App: React.FC = () => {
   const [isLiquidating, setIsLiquidating] = useState(false);
   const [slippage, setSlippage] = useState<string>(localStorage.getItem('fs_slippage') || '0.5');
   const [minProfit, setMinProfit] = useState<string>(localStorage.getItem('fs_min_profit') || '0.1');
+  const [consolidationThreshold, setConsolidationThreshold] = useState<string>(localStorage.getItem('fs_consolidation_threshold') || '10');
 
   const emergencyLiquidate = async () => {
     if (mode === 'DEMO') {
@@ -392,7 +393,8 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('fs_slippage', slippage || '0.5');
     localStorage.setItem('fs_min_profit', minProfit || '0.1');
-  }, [slippage, minProfit]);
+    localStorage.setItem('fs_consolidation_threshold', consolidationThreshold || '10');
+  }, [slippage, minProfit, consolidationThreshold]);
 
   // --- LOGIC MERGE: Start/Stop Engine ---
   useEffect(() => {
@@ -404,12 +406,13 @@ const App: React.FC = () => {
         analysis,
         tradeAmount,
         Number(slippage) / 100,
-        Number(minProfit) / 100
+        Number(minProfit) / 100,
+        Number(consolidationThreshold)
       );
     } else if (sniperRef.current) {
       sniperRef.current.stop();
     }
-  }, [botActive, mode, demoGasBalance, demoBalance, analysis, slippage, minProfit, tradeAmount]);
+  }, [botActive, mode, demoGasBalance, demoBalance, analysis, slippage, minProfit, tradeAmount, consolidationThreshold]);
 
   // Auto-Derive Address from Private Key
   useEffect(() => {
@@ -1131,6 +1134,23 @@ const App: React.FC = () => {
                           className="w-full accent-[#f01a74] h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer"
                         />
                         <p className="text-[9px] text-zinc-600 italic">Só opera se o lucro real (após taxas) for maior que isso.</p>
+                      </div>
+
+                      <div className="bg-[#0c0c0e] border border-zinc-800 rounded-2xl p-6 flex flex-col gap-3 md:col-span-2">
+                        <div className="flex justify-between items-center">
+                          <label className="text-[10px] font-bold text-zinc-500 uppercase">Gatilho de Resgate Automático (USDT)</label>
+                          <span className="text-xs font-mono text-emerald-500 font-bold">{consolidationThreshold} USDT</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="1"
+                          max="50"
+                          step="1"
+                          value={consolidationThreshold}
+                          onChange={(e) => setConsolidationThreshold(e.target.value)}
+                          className="w-full accent-[#f01a74] h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer"
+                        />
+                        <p className="text-[9px] text-zinc-600 italic">Quando o saldo do robô atingir este valor, ele envia tudo automaticamente para sua carteira Rabby.</p>
                       </div>
                     </div>
                   </div>
