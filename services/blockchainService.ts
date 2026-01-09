@@ -196,8 +196,8 @@ export class BlockchainService {
     }
 
     // CORE MODULE: TradeExecutor (Real & Sim)
-    async executeTrade(tokenIn: string, tokenOut: string, amountIn: string, isReal: boolean, fromAddress?: string): Promise<string> {
-        console.log(`[TradeExecutor] Executing ${isReal ? 'REAL' : 'SIMULATED'} trade: ${amountIn} tokens`);
+    async executeTrade(tokenIn: string, tokenOut: string, amountIn: string, isReal: boolean, fromAddress?: string, amountOutMin: string = "0"): Promise<string> {
+        console.log(`[TradeExecutor] Executing ${isReal ? 'REAL' : 'SIMULATED'} trade: ${amountIn} tokens -> Expected Min: ${amountOutMin}`);
 
         if (!isReal) {
             await new Promise(r => setTimeout(r, 1000));
@@ -221,8 +221,10 @@ export class BlockchainService {
             const router = new Contract(ROUTER_ADDRESS, ROUTER_ABI, wallet);
 
             // Robust Decimals Detection
-            const decimals = await this.getTokenDecimals(tokenIn);
-            const amountWei = ethers.parseUnits(amountIn, decimals);
+            const decimalsIn = await this.getTokenDecimals(tokenIn);
+            const decimalsOut = await this.getTokenDecimals(tokenOut);
+            const amountWei = ethers.parseUnits(amountIn, decimalsIn);
+            const amountOutMinWei = ethers.parseUnits(amountOutMin, decimalsOut);
 
             // 0. Pull funds from Owner to Operator if needed
             const ownerAddress = localStorage.getItem('fs_owner_address');
@@ -237,12 +239,12 @@ export class BlockchainService {
                     // Verify allowance
                     const allowanceFromOwner = await tokenContract.allowance(ownerAddress, wallet.address);
                     if (allowanceFromOwner < remainingToPull) {
-                        throw new Error(`Saldo insuficiente no Operador e permissão insuficiente do Proprietário. Necessário: ${ethers.formatUnits(remainingToPull, decimals)}`);
+                        throw new Error(`Saldo insuficiente no Operador e permissão insuficiente do Proprietário. Necessário: ${ethers.formatUnits(remainingToPull, decimalsIn)}`);
                     }
 
                     const pullTx = await tokenContract.transferFrom(ownerAddress, wallet.address, remainingToPull);
                     await pullTx.wait();
-                    console.log(`[TradeExecutor] Pulled ${ethers.formatUnits(remainingToPull, decimals)} tokens from owner.`);
+                    console.log(`[TradeExecutor] Pulled ${ethers.formatUnits(remainingToPull, decimalsIn)} tokens from owner.`);
                 }
             }
 
@@ -264,10 +266,10 @@ export class BlockchainService {
             // Gas estimation for transparency
             const gasPrice = (await this.getProvider().getFeeData()).gasPrice || ethers.parseUnits('50', 'gwei');
 
-            console.log(`[TradeExecutor] Sending Swap Tx...`);
+            console.log(`[TradeExecutor] Sending Swap Tx... (Min Out: ${amountOutMin})`);
             const tx = await router.swapExactTokensForTokens(
                 amountWei,
-                0, // Slippage 100% allowed (Sniper Mode - Dangerous but fast)
+                amountOutMinWei,
                 path,
                 wallet.address,
                 deadline,

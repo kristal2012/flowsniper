@@ -16,6 +16,8 @@ export class FlowSniperEngine {
     private totalBalance: number = 0;
     private aiAnalysis: any = null;
     private tradeAmount: string = "3.0";
+    private slippage: number = 0.005; // 0.5%
+    private minProfit: number = 0.001; // 0.1%
 
     constructor(onLog: (step: FlowStep) => void, onGasUpdate?: (bal: number) => void, onBalanceUpdate?: (bal: number) => void) {
         this.onLog = onLog;
@@ -23,9 +25,9 @@ export class FlowSniperEngine {
         this.onBalanceUpdate = onBalanceUpdate;
     }
 
-    start(mode: 'REAL' | 'DEMO', gas: number = 0, balance: number = 0, analysis: any = null, tradeAmount: string = "3.0") {
+    start(mode: 'REAL' | 'DEMO', gas: number = 0, balance: number = 0, analysis: any = null, tradeAmount: string = "3.0", slippage: number = 0.005, minProfit: number = 0.001) {
         if (this.active) {
-            this.updateContext(gas, balance, analysis, tradeAmount);
+            this.updateContext(gas, balance, analysis, tradeAmount, slippage, minProfit);
             this.runMode = mode;
             return;
         }
@@ -35,15 +37,19 @@ export class FlowSniperEngine {
         this.totalBalance = balance;
         this.aiAnalysis = analysis;
         this.tradeAmount = tradeAmount;
-        console.log("ENGINE STARTED IN MODE:", mode, "GAS:", gas, "BAL:", balance, "AI:", analysis?.action, "TRADE:", tradeAmount);
+        this.slippage = slippage;
+        this.minProfit = minProfit;
+        console.log("ENGINE STARTED IN MODE:", mode, "GAS:", gas, "BAL:", balance, "AI:", analysis?.action, "TRADE:", tradeAmount, "SLIPPAGE:", slippage);
         this.run();
     }
 
-    updateContext(gas: number, balance: number, analysis: any, tradeAmount: string = "3.0") {
+    updateContext(gas: number, balance: number, analysis: any, tradeAmount: string = "3.0", slippage: number = 0.005, minProfit: number = 0.001) {
         this.gasBalance = gas;
         this.totalBalance = balance;
         this.aiAnalysis = analysis;
         this.tradeAmount = tradeAmount;
+        this.slippage = slippage;
+        this.minProfit = minProfit;
     }
 
     stop() {
@@ -69,147 +75,151 @@ export class FlowSniperEngine {
             'SOL': '0x7df36098c4f923b7596ad881a70428f62c0199ba'
         };
 
+        const GAS_ESTIMATE_USDT = 0.15; // Estimated gas cost in USDT for a round-trip
+
         while (this.active) {
-            // Pulse log to show activity
+            // Pulse log
             this.onLog({
                 id: 'pulse-' + Date.now(),
                 timestamp: new Date().toLocaleTimeString(),
                 type: 'SCAN_PULSE',
-                pair: 'Scanning Network (Alchemy)...',
+                pair: 'Scanning Strategy: Momentum/Arbitrage...',
                 profit: 0,
                 status: 'SUCCESS',
                 hash: ''
             });
 
-            // Stop if drawdown hit
             if (this.dailyPnl <= this.maxDrawdown) {
-                console.warn("Daily drawdown limit reached. Pausing engine.");
                 this.stop();
                 break;
             }
 
-            // Gas check
             if (this.runMode === 'DEMO' && this.gasBalance <= 0) {
-                console.warn("Out of gas (DEMO). Motor standby.");
                 await new Promise(resolve => setTimeout(resolve, 5000));
                 continue;
             }
 
-            // AI Decision logic
             if (this.aiAnalysis && (this.aiAnalysis.action === 'WAIT' || this.aiAnalysis.action === 'HOLD')) {
-                this.onLog({
-                    id: 'ai-wait-' + Date.now(),
-                    timestamp: new Date().toLocaleTimeString(),
-                    type: 'SCAN_PULSE',
-                    pair: `AI Waiting: ${this.aiAnalysis.suggestedStrategy || 'Market Neutral'}`,
-                    profit: 0,
-                    status: 'SUCCESS',
-                    hash: ''
-                });
-                await new Promise(resolve => setTimeout(resolve, 2000));
+                await new Promise(resolve => setTimeout(resolve, 3000));
                 continue;
             }
 
-            // 1. LIQUIDITY SCAN
+            // 1. SELECT TARGET
             const randomSymbol = symbols[Math.floor(Math.random() * symbols.length)];
             const price = await fetchCurrentPrice(randomSymbol);
 
             if (price > 0) {
                 const selectedDex = dexes[Math.floor(Math.random() * dexes.length)];
-                const isSlippage = Math.random() > 0.4;
-                const type: FlowOperation = isSlippage ? 'ROUTE_OPTIMIZATION' : 'LIQUIDITY_SCAN';
+                const tokenIn = TOKENS['USDT'];
+                const cleanedSymbol = randomSymbol.replace('USDT', '').replace('POL', 'WMATIC');
+                const tokenOut = TOKENS[cleanedSymbol] || TOKENS['WMATIC'];
 
+                // --- SMART STRATEGY: PRE-FLIGHT VERIFICATION ---
+                let isProfitable = false;
+                let estimatedNetProfit = 0;
+                let buyAmountOut = "0";
+
+                try {
+                    // Step A: How much token do we get for our USDT?
+                    const buyAmounts = await blockchainService.getAmountsOut(this.tradeAmount, [tokenIn, tokenOut]);
+                    if (buyAmounts && buyAmounts.length >= 2) {
+                        const decimalsOut = await (blockchainService as any).getTokenDecimals(tokenOut);
+                        buyAmountOut = (Number(buyAmounts[1]) / (10 ** decimalsOut)).toString();
+
+                        // Step B: How much USDT do we get back if we sell immediately?
+                        const sellAmounts = await blockchainService.getAmountsOut(buyAmountOut, [tokenOut, tokenIn]);
+                        if (sellAmounts && sellAmounts.length >= 2) {
+                            const usdtBack = Number(sellAmounts[1]) / (10 ** 6);
+                            const grossProfit = usdtBack - Number(this.tradeAmount);
+                            estimatedNetProfit = grossProfit - GAS_ESTIMATE_USDT;
+
+                            if (estimatedNetProfit > Number(this.tradeAmount) * this.minProfit) {
+                                isProfitable = true;
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.warn("[Strategy] Verification failed for", cleanedSymbol);
+                }
+
+                if (!isProfitable && this.runMode === 'REAL') {
+                    // Skip and wait
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    continue;
+                }
+
+                // EXECUTION
                 if (this.runMode === 'DEMO') {
-                    const gasCost = 0.01;
-                    this.gasBalance -= gasCost;
+                    this.gasBalance -= 0.01;
                     if (this.onGasUpdate) this.onGasUpdate(this.gasBalance);
                 }
 
                 let txHash = '';
+                let actualProfit = estimatedNetProfit;
+
                 if (this.runMode === 'REAL') {
                     try {
-                        const tokenIn = TOKENS['USDT'];
-                        const cleanedSymbol = randomSymbol.replace('USDT', '').replace('POL', 'WMATIC');
-                        const tokenOut = TOKENS[cleanedSymbol] || TOKENS['WMATIC'];
+                        // 1. BUY with Slippage Protection
+                        const minBuyOut = (Number(buyAmountOut) * (1 - this.slippage)).toString();
+                        const buyHash = await blockchainService.executeTrade(tokenIn, tokenOut, this.tradeAmount, true, undefined, minBuyOut);
 
-                        // Verification: check if pool has liquidity
-                        const amounts = await blockchainService.getAmountsOut(this.tradeAmount, [tokenIn, tokenOut]).catch(() => null);
-                        if (!amounts || amounts.length < 2) {
-                            throw new Error("DEX Error: No Liquidity for " + cleanedSymbol);
-                        }
+                        await new Promise(resolve => setTimeout(resolve, 1000));
 
-                        // 1. BUY: USDT -> Token
-                        this.onLog({
-                            id: 'buy-' + Date.now(),
-                            timestamp: new Date().toLocaleTimeString(),
-                            type: 'ROUTE_OPTIMIZATION',
-                            pair: `Buying ${cleanedSymbol}...`,
-                            profit: 0,
-                            status: 'SUCCESS',
-                            hash: ''
-                        });
-
-                        const buyHash = await blockchainService.executeTrade(tokenIn, tokenOut, this.tradeAmount, true);
-
-                        // 2. WAIT
-                        await new Promise(resolve => setTimeout(resolve, 500));
-
-                        // 3. SELL: Token -> USDT
-                        this.onLog({
-                            id: 'sell-' + Date.now(),
-                            timestamp: new Date().toLocaleTimeString(),
-                            type: 'SLIPPAGE_SWAP',
-                            pair: `Sniping Back to USDT...`,
-                            profit: 0,
-                            status: 'SUCCESS',
-                            hash: ''
-                        });
-
+                        // 2. SELL with Slippage Protection
                         const activeAddr = blockchainService.getWalletAddress();
                         const tokenBal = activeAddr ? await blockchainService.getBalance(tokenOut, activeAddr) : '0';
+
                         if (Number(tokenBal) > 0) {
-                            txHash = await blockchainService.executeTrade(tokenOut, tokenIn, tokenBal, true);
+                            // Calculate min sell out based on current market for the balance we have
+                            const currentSellAmounts = await blockchainService.getAmountsOut(tokenBal, [tokenOut, tokenIn]);
+                            const expectedUsdtBack = Number(currentSellAmounts[1]) / (10 ** 6);
+                            const minUsdtOut = (expectedUsdtBack * (1 - this.slippage)).toString();
+
+                            txHash = await blockchainService.executeTrade(tokenOut, tokenIn, tokenBal, true, undefined, minUsdtOut);
+
+                            // Calculate actual profit (approximate for UI)
+                            actualProfit = expectedUsdtBack - Number(this.tradeAmount) - GAS_ESTIMATE_USDT;
                         } else {
                             txHash = buyHash;
+                            actualProfit = -0.1; // Failed to buy enough?
                         }
                     } catch (err: any) {
                         this.onLog({
                             id: 'err-' + Date.now(),
                             timestamp: new Date().toLocaleTimeString(),
                             type: 'LIQUIDITY_SCAN',
-                            pair: `${err.message || 'DEX Execution Error'}`,
+                            pair: `SAFE SKIP: ${err.message}`,
                             profit: 0,
                             status: 'FAILED',
                             hash: ''
                         });
-                        await new Promise(resolve => setTimeout(resolve, 3000));
                         continue;
                     }
                 } else {
+                    // Fake successful profit for DEMO if strategy says so
                     txHash = '0xSIM_' + Math.random().toString(16).substr(2, 10);
+                    actualProfit = isProfitable ? estimatedNetProfit : (Math.random() * -0.05);
                 }
 
-                let baseProfit = isSlippage ? (Math.random() * 0.02) : (Math.random() * 0.01);
-                const profit = Number(baseProfit.toFixed(4));
-                this.dailyPnl += profit;
-
+                this.dailyPnl += actualProfit;
                 if (this.runMode === 'DEMO') {
-                    this.totalBalance += profit;
+                    this.totalBalance += actualProfit;
                     if (this.onBalanceUpdate) this.onBalanceUpdate(this.totalBalance);
                 }
 
                 this.onLog({
                     id: Math.random().toString(36).substr(2, 9),
                     timestamp: new Date().toLocaleTimeString(),
-                    type: type,
+                    type: isProfitable ? 'ROUTE_OPTIMIZATION' : 'LIQUIDITY_SCAN',
                     pair: `${randomSymbol.replace('USDT', '')}/USDT (${selectedDex})`,
-                    profit: profit,
+                    profit: actualProfit,
                     status: 'SUCCESS',
                     hash: txHash
                 });
             }
 
-            await new Promise(resolve => setTimeout(resolve, Math.random() * 250 + 50));
+            await new Promise(resolve => setTimeout(resolve, 2000));
         }
     }
 }
+

@@ -197,6 +197,8 @@ const App: React.FC = () => {
   // Estados de Formulário
   const [liquidityAction, setLiquidityAction] = useState<'add' | 'remove'>('add');
   const [isLiquidating, setIsLiquidating] = useState(false);
+  const [slippage, setSlippage] = useState<string>(localStorage.getItem('fs_slippage') || '0.5');
+  const [minProfit, setMinProfit] = useState<string>(localStorage.getItem('fs_min_profit') || '0.1');
 
   const emergencyLiquidate = async () => {
     if (mode === 'DEMO') {
@@ -386,14 +388,28 @@ const App: React.FC = () => {
     localStorage.setItem('fs_mode', mode);
   }, [mode]);
 
+  // Persist Strategy Settings
+  useEffect(() => {
+    localStorage.setItem('fs_slippage', slippage || '0.5');
+    localStorage.setItem('fs_min_profit', minProfit || '0.1');
+  }, [slippage, minProfit]);
+
   // --- LOGIC MERGE: Start/Stop Engine ---
   useEffect(() => {
     if (botActive && sniperRef.current) {
-      sniperRef.current.start(mode, demoGasBalance, demoBalance, analysis, tradeAmount);
+      sniperRef.current.start(
+        mode,
+        demoGasBalance,
+        demoBalance,
+        analysis,
+        tradeAmount,
+        Number(slippage) / 100,
+        Number(minProfit) / 100
+      );
     } else if (sniperRef.current) {
       sniperRef.current.stop();
     }
-  }, [botActive, mode, demoGasBalance, demoBalance, analysis]);
+  }, [botActive, mode, demoGasBalance, demoBalance, analysis, slippage, minProfit, tradeAmount]);
 
   // Auto-Derive Address from Private Key
   useEffect(() => {
@@ -1078,6 +1094,46 @@ const App: React.FC = () => {
                   <button onClick={saveCredentials} className="px-10 py-5 bg-zinc-800 rounded-2xl font-black text-xs uppercase tracking-widest text-zinc-400 hover:text-white transition-all active:scale-95 border border-zinc-700">
                     Salvar Credenciais (Manual)
                   </button>
+
+                  {/* Configurações de Estratégia */}
+                  <div className="pt-8 border-t border-zinc-800/50 space-y-6">
+                    <h3 className="text-xl font-black italic uppercase tracking-tighter text-[#f01a74]">Parâmetros de Lucratividade</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="bg-[#0c0c0e] border border-zinc-800 rounded-2xl p-6 flex flex-col gap-3">
+                        <div className="flex justify-between items-center">
+                          <label className="text-[10px] font-bold text-zinc-500 uppercase">Tolerância de Slippage (%)</label>
+                          <span className="text-xs font-mono text-emerald-500 font-bold">{slippage}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.1"
+                          max="5"
+                          step="0.1"
+                          value={slippage}
+                          onChange={(e) => setSlippage(e.target.value)}
+                          className="w-full accent-[#f01a74] h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer"
+                        />
+                        <p className="text-[9px] text-zinc-600 italic">Recomendado: 0.5%. Protege contra perdas na execução.</p>
+                      </div>
+
+                      <div className="bg-[#0c0c0e] border border-zinc-800 rounded-2xl p-6 flex flex-col gap-3">
+                        <div className="flex justify-between items-center">
+                          <label className="text-[10px] font-bold text-zinc-500 uppercase">Gatilho de Lucro Mínimo (%)</label>
+                          <span className="text-xs font-mono text-emerald-500 font-bold">{minProfit}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="2"
+                          step="0.05"
+                          value={minProfit}
+                          onChange={(e) => setMinProfit(e.target.value)}
+                          className="w-full accent-[#f01a74] h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer"
+                        />
+                        <p className="text-[9px] text-zinc-600 italic">Só opera se o lucro real (após taxas) for maior que isso.</p>
+                      </div>
+                    </div>
+                  </div>
 
                   <div className="pt-8 border-t border-zinc-800/50 space-y-6">
                     <h3 className="text-xl font-black italic uppercase tracking-tighter">Fluxo de Conexão Rabby</h3>
