@@ -51,8 +51,8 @@ export class FlowSniperEngine {
     }
 
     private async run() {
-        const symbols = ['POLUSDT', 'BTCUSDT', 'ETHUSDT'];
-        const dexes = ['Uniswap v3', 'QuickSwap', 'SushiSwap'];
+        const symbols = ['POLUSDT', 'BTCUSDT', 'ETHUSDT', 'LINKUSDT', 'UNIUSDT', 'AAVEUSDT', 'QUICKUSDT', 'USDCUSDT', 'SOLUSDT'];
+        const dexes = ['Uniswap v3', 'QuickSwap', 'SushiSwap', 'Curve', 'Dodo', 'Balancer'];
 
         // Token Addresses for Polygon
         const TOKENS: { [key: string]: string } = {
@@ -60,7 +60,13 @@ export class FlowSniperEngine {
             'POL': '0x0000000000000000000000000000000000000000', // Native
             'WMATIC': '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270',
             'WETH': '0x7ceb23fd6bc0ad59f6c078095c510c28342245c4',
-            'WBTC': '0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6'
+            'WBTC': '0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6',
+            'LINK': '0x53e0bca35ec356bd5dddfebbd1fc0fd03fabad39',
+            'UNI': '0xb33EaAd8d922B1083446DC23f610c2567fB5180f',
+            'AAVE': '0xd6df30500db6e36d4336069904944f2b93652618',
+            'QUICK': '0xf28768daa238a2e52b21697284f1076f8a02c98d',
+            'USDC': '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359',
+            'SOL': '0x7df36098c4f923b7596ad881a70428f62c0199ba'
         };
 
         while (this.active) {
@@ -80,8 +86,8 @@ export class FlowSniperEngine {
 
             // AI Decision logic
             if (this.aiAnalysis && (this.aiAnalysis.action === 'WAIT' || this.aiAnalysis.action === 'HOLD')) {
-                console.log("AI suggests to wait. Strategy:", this.aiAnalysis.suggestedStrategy);
-                await new Promise(resolve => setTimeout(resolve, 10000));
+                console.log("AI suggests to wait. Reducing cooldown for rapid scan...");
+                await new Promise(resolve => setTimeout(resolve, 2000)); // Reduced from 10s
                 continue;
             }
 
@@ -153,8 +159,8 @@ export class FlowSniperEngine {
                 this.onLog(step);
             }
 
-            // High frequency simulation: 1-3 seconds
-            await new Promise(resolve => setTimeout(resolve, Math.random() * 2000 + 1000));
+            // High frequency simulation: 100ms - 800ms
+            await new Promise(resolve => setTimeout(resolve, Math.random() * 700 + 100));
         }
     }
 }
