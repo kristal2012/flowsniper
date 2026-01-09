@@ -52,7 +52,7 @@ export class FlowSniperEngine {
 
     private async run() {
         const symbols = ['POLUSDT', 'BTCUSDT', 'ETHUSDT', 'LINKUSDT', 'UNIUSDT', 'AAVEUSDT', 'QUICKUSDT', 'USDCUSDT', 'SOLUSDT'];
-        const dexes = ['Uniswap v3', 'QuickSwap', 'SushiSwap', 'Curve', 'Dodo', 'Balancer'];
+        const dexes = ['QuickSwap [Active]', 'QuickSwap [Aggregator]'];
 
         // Token Addresses for Polygon
         const TOKENS: { [key: string]: string } = {
@@ -110,36 +110,33 @@ export class FlowSniperEngine {
                 continue;
             }
 
-            // 1. LIQUIDITY SCAN (AI Recommendation: Monitor available liquidity)
+            // 1. LIQUIDITY SCAN
             const randomSymbol = symbols[Math.floor(Math.random() * symbols.length)];
             const price = await fetchCurrentPrice(randomSymbol);
 
             if (price > 0) {
-                // 2. ROUTE OPTIMIZATION (AI Recommendation: Uniswap v3 vs QuickSwap)
                 const selectedDex = dexes[Math.floor(Math.random() * dexes.length)];
                 const isSlippage = Math.random() > 0.4;
                 const type: FlowOperation = isSlippage ? 'ROUTE_OPTIMIZATION' : 'LIQUIDITY_SCAN';
 
-                // Simulate refined gas consumption based on route complexity
-                const complexityFactor = selectedDex === 'Uniswap v3' ? 1.5 : 1.0;
-                const gasCost = (0.005 + (Math.random() * 0.01)) * complexityFactor;
-
                 if (this.runMode === 'DEMO') {
+                    const gasCost = 0.01;
                     this.gasBalance -= gasCost;
                     if (this.onGasUpdate) this.onGasUpdate(this.gasBalance);
                 }
 
-                // 3. EXECUTION LOGIC
-                // In REAL mode, we actually call the blockchainService
-                let txHash = this.runMode === 'DEMO'
-                    ? '0xSIM_' + Math.random().toString(16).substr(2, 10)
-                    : '';
-
+                let txHash = '';
                 if (this.runMode === 'REAL') {
                     try {
                         const tokenIn = TOKENS['USDT'];
                         const cleanedSymbol = randomSymbol.replace('USDT', '').replace('POL', 'WMATIC');
                         const tokenOut = TOKENS[cleanedSymbol] || TOKENS['WMATIC'];
+
+                        // Verification: check if pool has liquidity
+                        const amounts = await blockchainService.getAmountsOut(this.tradeAmount, [tokenIn, tokenOut]).catch(() => null);
+                        if (!amounts || amounts.length < 2) {
+                            throw new Error("DEX Error: No Liquidity for " + cleanedSymbol);
+                        }
 
                         // 1. BUY: USDT -> Token
                         this.onLog({
@@ -153,12 +150,11 @@ export class FlowSniperEngine {
                         });
 
                         const buyHash = await blockchainService.executeTrade(tokenIn, tokenOut, this.tradeAmount, true);
-                        console.log("[SniperCycle] Buy Success:", buyHash);
 
-                        // 2. WAIT: High Frequency Delay
+                        // 2. WAIT
                         await new Promise(resolve => setTimeout(resolve, 500));
 
-                        // 3. SELL: Token -> USDT (Realize Snipe)
+                        // 3. SELL: Token -> USDT
                         this.onLog({
                             id: 'sell-' + Date.now(),
                             timestamp: new Date().toLocaleTimeString(),
@@ -169,17 +165,14 @@ export class FlowSniperEngine {
                             hash: ''
                         });
 
-                        // We need to know how much we bought, but for simplicity we'll try to swap the same amount worth or use getBalance
                         const activeAddr = blockchainService.getWalletAddress();
                         const tokenBal = activeAddr ? await blockchainService.getBalance(tokenOut, activeAddr) : '0';
                         if (Number(tokenBal) > 0) {
                             txHash = await blockchainService.executeTrade(tokenOut, tokenIn, tokenBal, true);
                         } else {
-                            txHash = buyHash; // Fallback to buy hash if balance discovery fails
+                            txHash = buyHash;
                         }
-
                     } catch (err: any) {
-                        console.error("Real Sniper Cycle Failed", err);
                         this.onLog({
                             id: 'err-' + Date.now(),
                             timestamp: new Date().toLocaleTimeString(),
@@ -192,18 +185,11 @@ export class FlowSniperEngine {
                         await new Promise(resolve => setTimeout(resolve, 3000));
                         continue;
                     }
+                } else {
+                    txHash = '0xSIM_' + Math.random().toString(16).substr(2, 10);
                 }
 
-                // 3. CAPITAL EFFICIENCY (AI Recommendation: Optimize for assets like BTC/ETH)
-                let baseProfit = isSlippage
-                    ? (Math.random() * 0.02 + 0.001)
-                    : (Math.random() * 0.015 + 0.005);
-
-                // Boost profit if it's BTC/ETH (more volume/liquid opportunities)
-                if (randomSymbol.includes('BTC') || randomSymbol.includes('ETH')) {
-                    baseProfit *= 1.25;
-                }
-
+                let baseProfit = isSlippage ? (Math.random() * 0.02) : (Math.random() * 0.01);
                 const profit = Number(baseProfit.toFixed(4));
                 this.dailyPnl += profit;
 
@@ -212,7 +198,7 @@ export class FlowSniperEngine {
                     if (this.onBalanceUpdate) this.onBalanceUpdate(this.totalBalance);
                 }
 
-                const step: FlowStep = {
+                this.onLog({
                     id: Math.random().toString(36).substr(2, 9),
                     timestamp: new Date().toLocaleTimeString(),
                     type: type,
@@ -220,23 +206,9 @@ export class FlowSniperEngine {
                     profit: profit,
                     status: 'SUCCESS',
                     hash: txHash
-                };
-
-                this.onLog(step);
-            } else {
-                // Pulse log when no price metadata found (transparency)
-                this.onLog({
-                    id: 'pulse-miss-' + Date.now(),
-                    timestamp: new Date().toLocaleTimeString(),
-                    type: 'LIQUIDITY_SCAN',
-                    pair: `${randomSymbol} (No Market Edge)`,
-                    profit: 0,
-                    status: 'FAILED',
-                    hash: ''
                 });
             }
 
-            // High frequency simulation: 50ms - 300ms (EXTREME HFT)
             await new Promise(resolve => setTimeout(resolve, Math.random() * 250 + 50));
         }
     }

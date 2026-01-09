@@ -143,6 +143,23 @@ export class BlockchainService {
         }
     }
 
+    public async getAmountsOut(amountIn: string, path: string[]): Promise<bigint[]> {
+        try {
+            const provider = this.getProvider();
+            const router = new Contract(ROUTER_ADDRESS, ROUTER_ABI, provider);
+
+            // Detect decimals for the first token in path
+            const decimals = await this.getTokenDecimals(path[0]);
+            const amountWei = ethers.parseUnits(amountIn, decimals);
+
+            const amounts = await router.getAmountsOut(amountWei, path);
+            return amounts;
+        } catch (e) {
+            console.error("[BlockchainService] getAmountsOut Error:", e);
+            return [];
+        }
+    }
+
     public getWalletAddress(): string | null {
         const wallet = this.getWallet();
         return wallet ? wallet.address : null;

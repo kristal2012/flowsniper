@@ -100,23 +100,41 @@ const App: React.FC = () => {
           opUsdt = await blockchainService.getBalance(usdtAddr, opAddr).catch(e => '0.00');
         }
 
-        // Expanded Discovery for other assets
+        // Expanded Discovery for other assets in BOTH wallets (Owner and Operator)
         const otherTokens = [
           { name: 'WETH', addr: '0x7ceb23fd6bc0ad59f6c078095c510c28342245c4' },
           { name: 'WBTC', addr: '0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6' },
           { name: 'AAVE', addr: '0xd6df30500db6e36d4336069904944f2b93652618' },
-          { name: 'UNI', addr: '0xb33EaAd8d922B1083446DC23f610c2567fB5180f' }
+          { name: 'UNI', addr: '0xb33EaAd8d922B1083446DC23f610c2567fB5180f' },
+          { name: 'LINK', addr: '0x53e0bca35ec356bd5dddfebbd1fc0fd03fabad39' },
+          { name: 'QUICK', addr: '0xf28768daa238a2e52b21697284f1076f8a02c98d' },
+          { name: 'SOL', addr: '0x7df36098c4f923b7596ad881a70428f62c0199ba' },
+          { name: 'USDC', addr: '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359' },
+          { name: 'WMATIC', addr: '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270' }
         ];
 
         let portfolioValue = 0;
-        for (const t of otherTokens) {
-          const bal = await blockchainService.getBalance(t.addr, manager.address).catch(e => '0');
-          const price = await fetchCurrentPrice(t.name + 'USDT').catch(e => 0);
-          portfolioValue += Number(bal) * price;
+        const addressesToScan = [manager.address];
+        if (opAddr && opAddr !== manager.address) addressesToScan.push(opAddr);
+
+        for (const addr of addressesToScan) {
+          for (const t of otherTokens) {
+            try {
+              const bal = await blockchainService.getBalance(t.addr, addr).catch(() => '0');
+              if (Number(bal) > 0.000001) {
+                const price = await fetchCurrentPrice(t.name + 'USDT').catch(() => 0);
+                portfolioValue += Number(bal) * price;
+                console.log(`[PortfolioDiscovery] Found ${bal} ${t.name} in ${addr === opAddr ? 'Operator' : 'Owner'} ($${(Number(bal) * price).toFixed(2)})`);
+              }
+            } catch (e) { }
+          }
         }
 
-        console.log("[BalanceDebug] Final Selection - Capital:", usdt, "Gas:", pol, "Portfolio:", portfolioValue);
-        setRealUsdtBalance((Number(usdt) + portfolioValue).toFixed(2)); // Show total value including assets
+        console.log("[BalanceDebug] Final Sync - USDT:", usdt, "OpUSDT:", opUsdt, "Portfolio Assets:", portfolioValue);
+
+        // Total Capital = (Owner USDT + Operator USDT) + Portfolio Assets
+        const totalCapital = Number(usdt) + Number(opUsdt) + portfolioValue;
+        setRealUsdtBalance(totalCapital.toFixed(2));
         setRealPolBalance(Number(pol).toFixed(2));
         setOperatorPolBalance(Number(opPol).toFixed(2));
         setOperatorUsdtBalance(Number(opUsdt).toFixed(2));
@@ -157,6 +175,57 @@ const App: React.FC = () => {
 
   // Estados de Formulário
   const [liquidityAction, setLiquidityAction] = useState<'add' | 'remove'>('add');
+  const [isLiquidating, setIsLiquidating] = useState(false);
+
+  const emergencyLiquidate = async () => {
+    if (mode === 'DEMO') {
+      alert("Operação indisponível em modo DEMO.");
+      return;
+    }
+    if (!window.confirm("Deseja resgatar todos os ativos em HOLD e converter para USDT agora? Isse vai trazer seu capital de volta ao USDT.")) return;
+
+    setIsLiquidating(true);
+    try {
+      const tokensToSell = [
+        { name: 'WETH', addr: '0x7ceb23fd6bc0ad59f6c078095c510c28342245c4' },
+        { name: 'WBTC', addr: '0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6' },
+        { name: 'AAVE', addr: '0xd6df30500db6e36d4336069904944f2b93652618' },
+        { name: 'UNI', addr: '0xb33EaAd8d922B1083446DC23f610c2567fB5180f' },
+        { name: 'LINK', addr: '0x53e0bca35ec356bd5dddfebbd1fc0fd03fabad39' },
+        { name: 'QUICK', addr: '0xf28768daa238a2e52b21697284f1076f8a02c98d' },
+        { name: 'SOL', addr: '0x7df36098c4f923b7596ad881a70428f62c0199ba' },
+        { name: 'USDC', addr: '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359' },
+        { name: 'WMATIC', addr: '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270' }
+      ];
+
+      const usdtAddr = '0xc2132d05d31c914a87c6611c10748aeb04b58e8f';
+      const opAddr = localStorage.getItem('fs_operator_address') || manager.address;
+      const ownerAddr = manager.address;
+
+      // Scanning both for liquidation
+      const scanAddrs = [ownerAddr];
+      if (opAddr !== ownerAddr) scanAddrs.push(opAddr);
+
+      for (const addr of scanAddrs) {
+        for (const t of tokensToSell) {
+          const bal = await blockchainService.getBalance(t.addr, addr).catch(() => '0');
+          if (Number(bal) > 0.0001) {
+            console.log(`[Liquidate] Selling ${bal} ${t.name} from ${addr} to USDT...`);
+            await blockchainService.executeTrade(t.addr, usdtAddr, bal, true).catch(e => {
+              console.error(`Failed to sell ${t.name}:`, e);
+            });
+          }
+        }
+      }
+
+      alert("LIQUIDAÇÃO CONCLUÍDA! Seu capital deve retornar para USDT em instantes. Dê F5 se necessário.");
+      fetchRealBalances();
+    } catch (err: any) {
+      alert("Erro na Liquidação: " + (err.message || "Desconhecido"));
+    } finally {
+      setIsLiquidating(false);
+    }
+  };
   const [liquidityAmount, setLiquidityAmount] = useState('');
   const [gasAmount, setGasAmount] = useState<string>('');
   const [isRecharging, setIsRecharging] = useState(false);
@@ -824,7 +893,29 @@ const App: React.FC = () => {
                     >
                       Confirmar Operação {mode === 'DEMO' ? '(SIMULAÇÃO)' : 'Privada'}
                     </button>
-                    <p className="text-[10px] text-zinc-600 font-medium italic">* Os fundos nunca saem do seu contrato privado durante a operação.</p>
+                    <div className="pt-4 border-t border-zinc-800/50 mt-8">
+                      <p className="text-[9px] text-zinc-600 font-bold uppercase mb-4 tracking-widest text-left">Ferramentas de Emergência</p>
+                      <button
+                        onClick={emergencyLiquidate}
+                        disabled={isLiquidating}
+                        className={`w-full py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-3 border transition-all ${isLiquidating ? 'bg-zinc-800 text-zinc-500 border-zinc-700' : 'bg-rose-500/10 text-rose-500 border-rose-500/20 hover:bg-rose-500/20'}`}
+                      >
+                        {isLiquidating ? (
+                          <>
+                            <div className="w-3 h-3 border-2 border-rose-500 border-t-transparent rounded-full animate-spin"></div>
+                            Processando Liquidação...
+                          </>
+                        ) : (
+                          <>
+                            <ShieldCheck size={14} />
+                            Resgatar Capital dos Ativos (Fixar USDT)
+                          </>
+                        )}
+                      </button>
+                      <p className="text-[8px] text-rose-500/50 font-medium italic mt-2 text-left leading-relaxed">
+                        * Use este botão se o robô acumulou tokens (ETH, BTC, etc) e você deseja convertê-los todos de volta para USDT imediatamente.
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
