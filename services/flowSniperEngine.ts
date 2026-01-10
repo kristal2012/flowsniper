@@ -150,8 +150,9 @@ export class FlowSniperEngine {
                     console.warn("[Strategy] Verification failed for", cleanedSymbol);
                 }
 
-                if (!isProfitable && this.runMode === 'REAL') {
-                    // Skip and wait
+                if (!isProfitable) {
+                    // Skip and wait (Both in REAL and DEMO)
+                    // This gives the user a realistic sense of when the bot would actually Fire
                     await new Promise(resolve => setTimeout(resolve, 1000));
                     continue;
                 }
