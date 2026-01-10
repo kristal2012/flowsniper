@@ -79,7 +79,7 @@ export class FlowSniperEngine {
             'SOL': '0x7df36098c4f923b7596ad881a70428f62c0199ba'
         };
 
-        const GAS_ESTIMATE_USDT = 0.15; // Estimated gas cost in USDT for a round-trip
+        const GAS_ESTIMATE_USDT = 0.08;
 
         while (this.active) {
             // Pulse log
@@ -118,28 +118,32 @@ export class FlowSniperEngine {
                 const cleanedSymbol = randomSymbol.replace('USDT', '').replace('POL', 'WMATIC');
                 const tokenOut = TOKENS[cleanedSymbol] || TOKENS['WMATIC'];
 
+                const GAS_ESTIMATE_USDT = 0.08; // Adjusted to be more realistic for Polygon
+
                 // --- SMART STRATEGY: PRE-FLIGHT VERIFICATION ---
                 let isProfitable = false;
                 let estimatedNetProfit = 0;
                 let buyAmountOut = "0";
 
                 try {
-                    // Step A: How much token do we get for our USDT?
+                    // Step A: How much token do we get for our USDT on DEX?
                     const buyAmounts = await blockchainService.getAmountsOut(this.tradeAmount, [tokenIn, tokenOut]);
                     if (buyAmounts && buyAmounts.length >= 2) {
                         const decimalsOut = await (blockchainService as any).getTokenDecimals(tokenOut);
                         buyAmountOut = (Number(buyAmounts[1]) / (10 ** decimalsOut)).toString();
 
-                        // Step B: How much USDT do we get back if we sell immediately?
-                        const sellAmounts = await blockchainService.getAmountsOut(buyAmountOut, [tokenOut, tokenIn]);
-                        if (sellAmounts && sellAmounts.length >= 2) {
-                            const usdtBack = Number(sellAmounts[1]) / (10 ** 6);
-                            const grossProfit = usdtBack - Number(this.tradeAmount);
-                            estimatedNetProfit = grossProfit - GAS_ESTIMATE_USDT;
+                        // Step B: What is this amount worth at the GLOBAL (Binance/Bybit) Price?
+                        // This detects if QuickSwap is "at a discount" compared to the world.
+                        const globalPrice = price; // already fetched via fetchCurrentPrice(randomSymbol)
+                        const globalValueUsdt = Number(buyAmountOut) * globalPrice;
 
-                            if (estimatedNetProfit > Number(this.tradeAmount) * this.minProfit) {
-                                isProfitable = true;
-                            }
+                        const grossProfit = globalValueUsdt - Number(this.tradeAmount);
+                        estimatedNetProfit = grossProfit - (GAS_ESTIMATE_USDT * 2); // Factor in Gas for Buy + Sell
+
+                        // Logic: If the DEX matches the Global price, estimatedNetProfit will be ~0 or negative due to 0.3% fee.
+                        // If DEX has a "Dip" vs Global, this becomes positive.
+                        if (estimatedNetProfit > Number(this.tradeAmount) * this.minProfit) {
+                            isProfitable = true;
                         }
                     }
                 } catch (e) {
