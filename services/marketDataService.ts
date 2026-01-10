@@ -67,13 +67,30 @@ export const fetchCurrentPrice = async (symbol: string = 'POLUSDT'): Promise<num
     } catch (error) {
         console.warn(`[MarketData] Bybit price failed for ${symbol}, trying Binance fallback...`);
         try {
-            const binanceUrl = `https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`;
+            const binanceUrl = `/binance-api/api/v3/ticker/price?symbol=${symbol}`;
             const response = await fetch(binanceUrl);
             const data = await response.json();
             return parseFloat(data.price);
         } catch (bError) {
-            console.error(`[MarketData] All price sources failed for ${symbol}`, bError);
-            return 0;
+            console.warn(`[MarketData] Binance failed, trying CoinGecko...`);
+            try {
+                // CoinGecko fallback (no CORS issues)
+                const coinGeckoMap: { [key: string]: string } = {
+                    'POLUSDT': 'matic-network',
+                    'WMATICUSDT': 'matic-network',
+                    'ETHUSDT': 'ethereum',
+                    'BTCUSDT': 'bitcoin',
+                    'USDCUSDT': 'usd-coin'
+                };
+                const coinId = coinGeckoMap[symbol] || 'matic-network';
+                const cgUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd`;
+                const cgResp = await fetch(cgUrl);
+                const cgData = await cgResp.json();
+                return cgData[coinId]?.usd || 0;
+            } catch (cgError) {
+                console.error(`[MarketData] All price sources failed for ${symbol}`, cgError);
+                return 0;
+            }
         }
     }
 };
