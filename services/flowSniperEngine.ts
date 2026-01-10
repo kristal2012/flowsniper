@@ -79,7 +79,7 @@ export class FlowSniperEngine {
             'SOL': '0x7df36098c4f923b7596ad881a70428f62c0199ba'
         };
 
-        const GAS_ESTIMATE_USDT = 0.08;
+        const GAS_ESTIMATE_USDT = 0.03;
 
         while (this.active) {
             // Pulse log
@@ -103,14 +103,25 @@ export class FlowSniperEngine {
                 continue;
             }
 
-            if (this.aiAnalysis && (this.aiAnalysis.action === 'WAIT' || this.aiAnalysis.action === 'HOLD')) {
-                await new Promise(resolve => setTimeout(resolve, 3000));
-                continue;
-            }
+            // AI Analysis is kept for UI/Metadata but no longer blocks the sniper's local price check
 
             // 1. SELECT TARGET
             const randomSymbol = symbols[Math.floor(Math.random() * symbols.length)];
             const price = await fetchCurrentPrice(randomSymbol);
+
+            if (price <= 0) {
+                this.onLog({
+                    id: 'pulse-' + Date.now(),
+                    timestamp: new Date().toLocaleTimeString(),
+                    type: 'SCAN_PULSE',
+                    pair: `SCAN: Erro ao obter cotação de ${randomSymbol} (API Bloqueada/CORS).`,
+                    profit: 0,
+                    status: 'SUCCESS',
+                    hash: ''
+                });
+                await new Promise(resolve => setTimeout(resolve, 3000));
+                continue;
+            }
 
             if (price > 0) {
                 const selectedDex = dexes[Math.floor(Math.random() * dexes.length)];
@@ -130,7 +141,7 @@ export class FlowSniperEngine {
                     continue;
                 }
 
-                const GAS_ESTIMATE_USDT = 0.03; // ~0.04 POL on Polygon is roughly $0.03
+                // Using global GAS_ESTIMATE_USDT (0.03)
 
                 // --- SMART STRATEGY: PRE-FLIGHT VERIFICATION ---
                 let isProfitable = false;
