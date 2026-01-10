@@ -182,8 +182,8 @@ const App: React.FC = () => {
   const [isConnectingMetaMask, setIsConnectingMetaMask] = useState(false);
   const [isSettingUpOperator, setIsSettingUpOperator] = useState(false);
   const [isGrantingAllowance, setIsGrantingAllowance] = useState(false);
-  const [demoBalance, setDemoBalance] = useState<number>(0); // New Demo Balance State
-  const [demoGasBalance, setDemoGasBalance] = useState<number>(0); // New Demo Gas State
+  const [demoBalance, setDemoBalance] = useState<number>(1000); // Demo starts with $1000
+  const [demoGasBalance, setDemoGasBalance] = useState<number>(20); // Demo starts with 20 POL
   const [sniperLogs, setSniperLogs] = useState<SniperStep[]>([]);
 
   // Estados Financeiros
@@ -642,7 +642,7 @@ const App: React.FC = () => {
             <div className="flex flex-col items-end">
               <span className="text-[9px] text-zinc-500 font-bold uppercase leading-none mb-1">Lucro Sessão</span>
               <span className={`text-xs font-mono font-black ${netResult >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                {netResult >= 0 ? '+' : ''}{netResult.toFixed(4)} <span className="text-[10px]">USDT</span>
+                {netResult >= 0 ? '+' : ''}{netResult.toFixed(2)} <span className="text-[10px]">USDT</span>
               </span>
             </div>
             <div className={`w-2.5 h-2.5 rounded-full ${botActive ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-700'}`}></div>
@@ -831,21 +831,21 @@ const App: React.FC = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
                 <BotStat
                   label="Lucro Bruto (Diário)"
-                  value={`+${dailyProfit.toFixed(4)}`}
+                  value={`+${dailyProfit.toFixed(2)}`}
                   color="text-emerald-500"
                   icon={<ArrowUpRight size={20} />}
                   sub="Captura de Slippage On-Chain"
                 />
                 <BotStat
                   label="Perda Bruta (Diário)"
-                  value={`-${dailyLoss.toFixed(4)}`}
+                  value={`-${dailyLoss.toFixed(2)}`}
                   color="text-rose-500"
                   icon={<ArrowDownRight size={20} />}
                   sub="Taxas de Gás & Falhas"
                 />
                 <BotStat
                   label="Lucro Líquido"
-                  value={`${netResult >= 0 ? '+' : ''}${netResult.toFixed(4)}`}
+                  value={`${netResult >= 0 ? '+' : ''}${netResult.toFixed(2)}`}
                   color={netResult >= 0 ? 'text-white' : 'text-rose-400'}
                   icon={<Zap size={20} className={netResult >= 0 ? 'text-emerald-400' : 'text-rose-400'} />}
                   sub="Resultado Final da Sessão"

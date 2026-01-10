@@ -115,10 +115,22 @@ export class FlowSniperEngine {
             if (price > 0) {
                 const selectedDex = dexes[Math.floor(Math.random() * dexes.length)];
                 const tokenIn = TOKENS['USDT'];
-                const cleanedSymbol = randomSymbol.replace('USDT', '').replace('POL', 'WMATIC');
-                const tokenOut = TOKENS[cleanedSymbol] || TOKENS['WMATIC'];
 
-                const GAS_ESTIMATE_USDT = 0.08; // Adjusted to be more realistic for Polygon
+                // --- SYMBOL MAPPING FIX ---
+                let searchTag = randomSymbol.replace('USDT', '');
+                if (searchTag === 'BTC') searchTag = 'WBTC';
+                if (searchTag === 'ETH') searchTag = 'WETH';
+                if (searchTag === 'POL') searchTag = 'WMATIC';
+
+                const tokenOut = TOKENS[searchTag];
+
+                // If we don't have the address for this token on Polygon, skip it to avoid bugs
+                if (!tokenOut) {
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    continue;
+                }
+
+                const GAS_ESTIMATE_USDT = 0.08;
 
                 // --- SMART STRATEGY: PRE-FLIGHT VERIFICATION ---
                 let isProfitable = false;
@@ -133,21 +145,18 @@ export class FlowSniperEngine {
                         buyAmountOut = (Number(buyAmounts[1]) / (10 ** decimalsOut)).toString();
 
                         // Step B: What is this amount worth at the GLOBAL (Binance/Bybit) Price?
-                        // This detects if QuickSwap is "at a discount" compared to the world.
-                        const globalPrice = price; // already fetched via fetchCurrentPrice(randomSymbol)
+                        const globalPrice = price;
                         const globalValueUsdt = Number(buyAmountOut) * globalPrice;
 
                         const grossProfit = globalValueUsdt - Number(this.tradeAmount);
-                        estimatedNetProfit = grossProfit - (GAS_ESTIMATE_USDT * 2); // Factor in Gas for Buy + Sell
+                        estimatedNetProfit = grossProfit - (GAS_ESTIMATE_USDT * 2);
 
-                        // Logic: If the DEX matches the Global price, estimatedNetProfit will be ~0 or negative due to 0.3% fee.
-                        // If DEX has a "Dip" vs Global, this becomes positive.
                         if (estimatedNetProfit > Number(this.tradeAmount) * this.minProfit) {
                             isProfitable = true;
                         }
                     }
                 } catch (e) {
-                    console.warn("[Strategy] Verification failed for", cleanedSymbol);
+                    console.warn("[Strategy] Verification failed for", searchTag);
                 }
 
                 if (!isProfitable) {
