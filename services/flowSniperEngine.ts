@@ -222,32 +222,38 @@ export class FlowSniperEngine {
 
                     await new Promise(resolve => setTimeout(resolve, 1000));
 
-                    if (isProfitable && this.runMode === 'REAL') {
-                        // 1. BUY with Slippage Protection
-                        const minBuyOut = (Number(buyAmountOut) * (1 - this.slippage)).toString();
-                        buyHash = await blockchainService.executeTrade(tokenIn, tokenOut, this.tradeAmount, true, undefined, minBuyOut, useV3);
+                    if (this.runMode === 'REAL') {
+                        if (isProfitable) {
+                            // 1. BUY with Slippage Protection
+                            const minBuyOut = (Number(buyAmountOut) * (1 - this.slippage)).toString();
+                            buyHash = await blockchainService.executeTrade(tokenIn, tokenOut, this.tradeAmount, true, undefined, minBuyOut, useV3);
+                            await new Promise(resolve => setTimeout(resolve, 2000));
+                        }
 
-                        await new Promise(resolve => setTimeout(resolve, 2000));
-                    }
+                        // 2. SELL with Slippage Protection
+                        const activeAddr = blockchainService.getWalletAddress();
+                        const tokenBal = activeAddr ? await blockchainService.getBalance(tokenOut, activeAddr) : '0';
 
-                    // 2. SELL with Slippage Protection
-                    const activeAddr = blockchainService.getWalletAddress();
-                    const tokenBal = activeAddr ? await blockchainService.getBalance(tokenOut, activeAddr) : '0';
+                        if (Number(tokenBal) > 0) {
+                            // Calculate min sell out based on current market for the balance we have
+                            const currentSellAmounts = await blockchainService.getAmountsOut(tokenBal, [tokenOut, tokenIn]);
+                            const expectedUsdtBack = Number(currentSellAmounts[1]) / (10 ** 6);
+                            const minUsdtOut = (expectedUsdtBack * (1 - this.slippage)).toString();
 
-                    if (Number(tokenBal) > 0) {
-                        // Calculate min sell out based on current market for the balance we have
-                        const currentSellAmounts = await blockchainService.getAmountsOut(tokenBal, [tokenOut, tokenIn]);
-                        const expectedUsdtBack = Number(currentSellAmounts[1]) / (10 ** 6);
-                        const minUsdtOut = (expectedUsdtBack * (1 - this.slippage)).toString();
+                            txHash = await blockchainService.executeTrade(tokenOut, tokenIn, tokenBal, true, undefined, minUsdtOut);
 
-                        txHash = await blockchainService.executeTrade(tokenOut, tokenIn, tokenBal, true, undefined, minUsdtOut);
+                            // Calculate actual profit (approximate for UI)
+                            actualProfit = expectedUsdtBack - Number(this.tradeAmount) - GAS_ESTIMATE_USDT;
+                            successTrade = true;
+                        } else {
+                            txHash = buyHash;
+                            actualProfit = -0.1; // Failed to buy enough?
+                        }
 
-                        // Calculate actual profit (approximate for UI)
-                        actualProfit = expectedUsdtBack - Number(this.tradeAmount) - GAS_ESTIMATE_USDT;
-                        successTrade = true;
                     } else {
-                        txHash = buyHash;
-                        actualProfit = -0.1; // Failed to buy enough?
+                        // DEMO MODE
+                        txHash = '0xSIM_' + Math.random().toString(16).substr(2, 10);
+                        actualProfit = isProfitable ? estimatedNetProfit : (Math.random() * -0.05);
                     }
                 } catch (err: any) {
                     this.onLog({
@@ -261,63 +267,60 @@ export class FlowSniperEngine {
                     });
                     continue;
                 }
-            } else {
-                // Fake successful profit for DEMO if strategy says so
-                txHash = '0xSIM_' + Math.random().toString(16).substr(2, 10);
-                actualProfit = isProfitable ? estimatedNetProfit : (Math.random() * -0.05);
-            }
 
-            this.dailyPnl += actualProfit;
-            if (this.runMode === 'DEMO') {
-                this.totalBalance += actualProfit;
-                if (this.onBalanceUpdate) this.onBalanceUpdate(this.totalBalance);
-            }
+                this.dailyPnl += actualProfit;
+                if (this.runMode === 'DEMO') {
+                    this.totalBalance += actualProfit;
+                    if (this.onBalanceUpdate) this.onBalanceUpdate(this.totalBalance);
+                }
 
-            this.onLog({
-                id: Math.random().toString(36).substr(2, 9),
-                timestamp: new Date().toLocaleTimeString(),
-                type: isProfitable ? 'ROUTE_OPTIMIZATION' : 'LIQUIDITY_SCAN',
-                pair: `${randomSymbol.replace('USDT', '')}/USDT (${bestRoute})`,
-                profit: actualProfit,
-                status: 'SUCCESS',
-                hash: txHash
-            });
+                this.onLog({
+                    id: Math.random().toString(36).substr(2, 9),
+                    timestamp: new Date().toLocaleTimeString(),
+                    type: isProfitable ? 'ROUTE_OPTIMIZATION' : 'LIQUIDITY_SCAN',
+                    pair: `${randomSymbol.replace('USDT', '')}/USDT (${bestRoute})`,
+                    profit: actualProfit,
+                    status: 'SUCCESS',
+                    hash: txHash
+                });
 
-            // --- AUTO CONSOLIDATION LOGIC ---
-            if (this.runMode === 'REAL' && successTrade && this.consolidationThreshold > 0) {
-                try {
-                    const opAddr = blockchainService.getWalletAddress();
-                    const pvt = localStorage.getItem('fs_private_key');
-                    const ownerAddr = pvt ? new ethers.Wallet(pvt).address : null;
+                // --- AUTO CONSOLIDATION LOGIC ---
+                if (this.runMode === 'REAL' && successTrade && this.consolidationThreshold > 0) {
+                    try {
+                        const opAddr = blockchainService.getWalletAddress();
+                        const pvt = localStorage.getItem('fs_private_key');
+                        const ownerAddr = pvt ? new ethers.Wallet(pvt).address : null;
 
-                    // We need the owner address to transfer to. If not in localStorage, we can't do it.
-                    if (opAddr && ownerAddr && opAddr.toLowerCase() !== ownerAddr.toLowerCase()) {
-                        const usdtBal = await blockchainService.getBalance(TOKENS['USDT'], opAddr);
+                        // We need the owner address to transfer to. If not in localStorage, we can't do it.
+                        if (opAddr && ownerAddr && opAddr.toLowerCase() !== ownerAddr.toLowerCase()) {
+                            const usdtBal = await blockchainService.getBalance(TOKENS['USDT'], opAddr);
 
-                        if (Number(usdtBal) >= this.consolidationThreshold) {
-                            console.log(`[Consolidate] Threshold reached (${usdtBal} >= ${this.consolidationThreshold}). Transferring to Owner...`);
-                            this.onLog({
-                                id: 'consolidate-' + Date.now(),
-                                timestamp: new Date().toLocaleTimeString(),
-                                type: 'ASSET_CONSOLIDATION',
-                                pair: `Auto-Consolidating ${usdtBal} USDT...`,
-                                profit: 0,
-                                status: 'SUCCESS',
-                                hash: ''
-                            });
+                            if (Number(usdtBal) >= this.consolidationThreshold) {
+                                console.log(`[Consolidate] Threshold reached (${usdtBal} >= ${this.consolidationThreshold}). Transferring to Owner...`);
+                                this.onLog({
+                                    id: 'consolidate-' + Date.now(),
+                                    timestamp: new Date().toLocaleTimeString(),
+                                    type: 'ASSET_CONSOLIDATION',
+                                    pair: `Auto-Consolidating ${usdtBal} USDT...`,
+                                    profit: 0,
+                                    status: 'SUCCESS',
+                                    hash: ''
+                                });
 
-                            const transferHash = await blockchainService.transferTokens(TOKENS['USDT'], ownerAddr, usdtBal, opAddr);
-                            console.log(`[Consolidate] Success! Tx: ${transferHash}`);
+                                const transferHash = await blockchainService.transferTokens(TOKENS['USDT'], ownerAddr, usdtBal, opAddr);
+                                console.log(`[Consolidate] Success! Tx: ${transferHash}`);
+                            }
                         }
+                    } catch (e) {
+                        console.error("[Consolidate] Auto-transfer failed", e);
                     }
-                } catch (e) {
-                    console.error("[Consolidate] Auto-transfer failed", e);
                 }
             }
+
+            await new Promise(resolve => setTimeout(resolve, 2000));
         }
-
-        await new Promise(resolve => setTimeout(resolve, 2000));
     }
+
+
+
 }
-
-
