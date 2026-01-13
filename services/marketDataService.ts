@@ -84,7 +84,13 @@ export const fetchCurrentPrice = async (symbol: string = 'POLUSDT'): Promise<num
                     'WMATICUSDT': 'matic-network',
                     'ETHUSDT': 'ethereum',
                     'BTCUSDT': 'bitcoin',
-                    'USDCUSDT': 'usd-coin'
+                    'USDCUSDT': 'usd-coin',
+                    'DAIUSDT': 'dai',
+                    'LINKUSDT': 'chainlink',
+                    'UNIUSDT': 'uniswap',
+                    'GHSTUSDT': 'aavegotchi',
+                    'LDOUSDT': 'lido-dao',
+                    'GRTUSDT': 'the-graph'
                 };
                 const coinId = coinGeckoMap[normalizedSymbol] || coinGeckoMap[symbol] || 'matic-network';
                 const cgUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd`;

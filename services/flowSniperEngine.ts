@@ -286,8 +286,21 @@ export class FlowSniperEngine {
                 }
 
                 this.dailyPnl += actualProfit;
+                this.dailyPnl += actualProfit;
                 if (this.runMode === 'DEMO') {
                     this.totalBalance += actualProfit;
+
+                    // SIMULATE GAS CONSUMPTION
+                    // In real mode, the blockchain deducts native token.
+                    // In demo mode, we must manually reduce the gas balance to show reality.
+                    if (actualProfit !== 0 || txHash.startsWith('0xSIM')) {
+                        // Approx 0.03 USDT worth of POL per trade
+                        // Assuming 1 POL ~ 0.40 USDT -> 0.03 USDT is ~0.075 POL
+                        // Let's use a fixed " Gas units" approach
+                        this.gasBalance -= 0.05; // 0.05 POL per trade
+                        if (this.onGasUpdate) this.onGasUpdate(this.gasBalance);
+                    }
+
                     if (this.onBalanceUpdate) this.onBalanceUpdate(this.totalBalance);
                 }
 
