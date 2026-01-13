@@ -20,7 +20,21 @@ const ROUTER_ABI = [
 ];
 
 // QuickSwap Router Address (Polygon)
-const ROUTER_ADDRESS = "0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff";
+const ROUTER_ADDRESS = "0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff"; // QuickSwap V2
+
+// Uniswap V3 Addresses (Polygon)
+const QUOTER_V3_ADDRESS = "0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6";
+const ROUTER_V3_ADDRESS = "0xE592427A0AEce92De3Edee1F18E0157C05861564";
+
+// Uniswap V3 Quoter ABI (Minimal)
+const QUOTER_ABI = [
+    "function quoteExactInputSingle(address tokenIn, address tokenOut, uint24 fee, uint256 amountIn, uint160 sqrtPriceLimitX96) external returns (uint256 amountOut)"
+];
+
+// Uniswap V3 Router ABI (Minimal)
+const ROUTER_V3_ABI = [
+    "function exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96)) external payable returns (uint256 amountOut)"
+];
 
 const DEFAULT_RPC = 'https://polygon-mainnet.g.alchemy.com/v2/iRsg1SsPMDZZ9s5kHsRbH'; // User Alchemy RPC
 const FALLBACK_RPCS = [
@@ -161,6 +175,35 @@ export class BlockchainService {
         }
     }
 
+    // NEW: Uniswap V3 Quoter
+    public async getQuoteV3(tokenIn: string, tokenOut: string, amountIn: string, fee: number = 3000): Promise<string> {
+        try {
+            const provider = this.getProvider();
+            const quoter = new Contract(QUOTER_V3_ADDRESS, QUOTER_ABI, provider);
+
+            const decimalsIn = await this.getTokenDecimals(tokenIn);
+            const decimalsOut = await this.getTokenDecimals(tokenOut);
+            const amountWei = ethers.parseUnits(amountIn, decimalsIn);
+
+            // quoteExactInputSingle is not view in V3 Quoter v1, but we can callStatic it
+            // Note: In ethers v6, use .staticCall
+            const quoteWei = await quoter.quoteExactInputSingle.staticCall(
+                tokenIn,
+                tokenOut,
+                fee,
+                amountWei,
+                0
+            );
+
+            const formatted = ethers.formatUnits(quoteWei, decimalsOut);
+            console.log(`[getQuoteV3] ${amountIn} -> ${formatted} (Fee: ${fee})`);
+            return formatted;
+        } catch (e: any) {
+            // V3 might fail if no pool exists for this fee tier
+            return "0";
+        }
+    }
+
     public getWalletAddress(): string | null {
         const wallet = this.getWallet();
         return wallet ? wallet.address : null;
@@ -197,8 +240,8 @@ export class BlockchainService {
     }
 
     // CORE MODULE: TradeExecutor (Real & Sim)
-    async executeTrade(tokenIn: string, tokenOut: string, amountIn: string, isReal: boolean, fromAddress?: string, amountOutMin: string = "0"): Promise<string> {
-        console.log(`[TradeExecutor] Executing ${isReal ? 'REAL' : 'SIMULATED'} trade: ${amountIn} tokens -> Expected Min: ${amountOutMin}`);
+    async executeTrade(tokenIn: string, tokenOut: string, amountIn: string, isReal: boolean, fromAddress?: string, amountOutMin: string = "0", useV3: boolean = false): Promise<string> {
+        console.log(`[TradeExecutor] Executing ${isReal ? 'REAL' : 'SIMULATED'} trade (${useV3 ? 'Uniswap V3' : 'QuickSwap V2'}): ${amountIn} tokens`);
 
         if (!isReal) {
             await new Promise(r => setTimeout(r, 1000));
@@ -251,37 +294,68 @@ export class BlockchainService {
 
             const tokenContract = new Contract(tokenIn, ERC20_ABI, wallet);
 
-            // 1. Check & Approve Router if needed
-            console.log(`[TradeExecutor] Checking/Approving Router...`);
-            const allowance = await tokenContract.allowance(wallet.address, ROUTER_ADDRESS);
-
-            if (allowance < amountWei) {
-                const approveTx = await tokenContract.approve(ROUTER_ADDRESS, ethers.MaxUint256);
-                await approveTx.wait();
-            }
-
-            // 2. Swap
-            const path = [tokenIn, tokenOut];
-            const deadline = Math.floor(Date.now() / 1000) + 60 * 20; // 20 mins
-
             // Gas estimation for transparency
             const gasPrice = (await this.getProvider().getFeeData()).gasPrice || ethers.parseUnits('50', 'gwei');
 
-            console.log(`[TradeExecutor] Sending Swap Tx... (Min Out: ${amountOutMin})`);
-            const tx = await router.swapExactTokensForTokens(
-                amountWei,
-                amountOutMinWei,
-                path,
-                wallet.address,
-                deadline,
-                {
-                    gasLimit: 300000, // Standard swap gas limit
-                    gasPrice: gasPrice * 12n / 10n // 20% bump for speed
+            if (useV3) {
+                // UNISWAP V3 EXECUTION
+                console.log(`[TradeExecutor] Checking/Approving V3 Router...`);
+                const allowance = await tokenContract.allowance(wallet.address, ROUTER_V3_ADDRESS);
+                if (allowance < amountWei) {
+                    const approveTx = await tokenContract.approve(ROUTER_V3_ADDRESS, ethers.MaxUint256);
+                    await approveTx.wait();
                 }
-            );
 
-            console.log(`[TradeExecutor] Tx Sent: ${tx.hash}`);
-            return tx.hash;
+                const routerV3 = new Contract(ROUTER_V3_ADDRESS, ROUTER_V3_ABI, wallet);
+                const params = {
+                    tokenIn: tokenIn,
+                    tokenOut: tokenOut,
+                    fee: 3000, // Hardcoded to 0.3% pool for now
+                    recipient: wallet.address,
+                    deadline: Math.floor(Date.now() / 1000) + 60 * 20,
+                    amountIn: amountWei,
+                    amountOutMinimum: amountOutMinWei,
+                    sqrtPriceLimitX96: 0
+                };
+
+                console.log(`[TradeExecutor] Sending V3 Swap...`);
+                const tx = await routerV3.exactInputSingle(params, {
+                    gasLimit: 400000, // Slightly higher for V3
+                    gasPrice: gasPrice * 12n / 10n
+                });
+                console.log(`[TradeExecutor] V3 Tx based: ${tx.hash}`);
+                return tx.hash;
+
+            } else {
+                // QUICKSWAP V2 EXECUTION (Legacy)
+                console.log(`[TradeExecutor] Checking/Approving Router...`);
+                const allowance = await tokenContract.allowance(wallet.address, ROUTER_ADDRESS);
+
+                if (allowance < amountWei) {
+                    const approveTx = await tokenContract.approve(ROUTER_ADDRESS, ethers.MaxUint256);
+                    await approveTx.wait();
+                }
+
+                // 2. Swap
+                const path = [tokenIn, tokenOut];
+                const deadline = Math.floor(Date.now() / 1000) + 60 * 20; // 20 mins
+
+                console.log(`[TradeExecutor] Sending Swap Tx... (Min Out: ${amountOutMin})`);
+                const tx = await router.swapExactTokensForTokens(
+                    amountWei,
+                    amountOutMinWei,
+                    path,
+                    wallet.address,
+                    deadline,
+                    {
+                        gasLimit: 300000, // Standard swap gas limit
+                        gasPrice: gasPrice * 12n / 10n // 20% bump for speed
+                    }
+                );
+                console.log(`[TradeExecutor] Tx Sent: ${tx.hash}`);
+                return tx.hash;
+            }
+            return ""; // Should not reach here
 
         } catch (error: any) {
             console.error("[TradeExecutor] Real Trade Failed", error);
