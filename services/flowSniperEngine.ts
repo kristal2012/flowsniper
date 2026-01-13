@@ -222,6 +222,14 @@ export class FlowSniperEngine {
 
                     await new Promise(resolve => setTimeout(resolve, 1000));
 
+                    if (!isProfitable) {
+                        // In DEMO, we might want to simulate a trade occasionally for UX, but not always.
+                        // For now, let's revert to strict logic: if not profitable, skip.
+                        // Or if you want to show "scanning...", just continue.
+                        // But to fix the "only losses" issue, we must skip here.
+                        continue;
+                    }
+
                     if (this.runMode === 'REAL') {
                         if (isProfitable) {
                             // 1. BUY with Slippage Protection
