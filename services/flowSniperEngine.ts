@@ -221,6 +221,14 @@ export class FlowSniperEngine {
 
                     await new Promise(resolve => setTimeout(resolve, 1000));
 
+                    if (isProfitable && this.runMode === 'REAL') {
+                        // 1. BUY with Slippage Protection
+                        const minBuyOut = (Number(buyAmountOut) * (1 - this.slippage)).toString();
+                        buyHash = await blockchainService.executeTrade(tokenIn, tokenOut, this.tradeAmount, true, undefined, minBuyOut, useV3);
+
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                    }
+
                     // 2. SELL with Slippage Protection
                     const activeAddr = blockchainService.getWalletAddress();
                     const tokenBal = activeAddr ? await blockchainService.getBalance(tokenOut, activeAddr) : '0';
