@@ -152,6 +152,7 @@ export class FlowSniperEngine {
                 let bestRoute = 'QuickSwap (V2)';
                 let useV3 = false;
                 let txHash = '';
+                let buyHash = '';
                 let actualProfit = 0;
                 let successTrade = false;
 
