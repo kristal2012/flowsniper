@@ -223,11 +223,20 @@ export class FlowSniperEngine {
                     await new Promise(resolve => setTimeout(resolve, 1000));
 
                     if (!isProfitable) {
-                        // In DEMO, we might want to simulate a trade occasionally for UX, but not always.
-                        // For now, let's revert to strict logic: if not profitable, skip.
-                        // Or if you want to show "scanning...", just continue.
-                        // But to fix the "only losses" issue, we must skip here.
-                        continue;
+                        if (this.runMode === 'REAL') {
+                            continue; // Strict safety: Never trade if not profitable in Real mode
+                        } else {
+                            // DEMO MODE: "Stimulation" Logic
+                            // If the market is quiet, occasionally SIMULATE a profitable trade so the user sees activity.
+                            if (Math.random() < 0.25) { // 25% chance to find a "fake" opportunity if market is flat
+                                isProfitable = true;
+                                estimatedNetProfit = (Number(this.tradeAmount) * (0.002 + Math.random() * 0.008)); // 0.2% - 1.0% simulated profit
+                                bestRoute = Math.random() > 0.5 ? 'Uniswap (V3)' : 'QuickSwap (V2)'; // Simulate route
+                                console.log(`[Strategy-DEMO] Simulating Opportunity for ${searchTag} on ${bestRoute}`);
+                            } else {
+                                continue; // Skip the rest to avoid spamming too much
+                            }
+                        }
                     }
 
                     if (this.runMode === 'REAL') {
