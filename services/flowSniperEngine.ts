@@ -207,8 +207,15 @@ export class FlowSniperEngine {
                         console.log(`[Strategy] ${searchTag} [${bestRoute}]: Buy ${buyAmountOut} tokens @ Global $${globalPrice} = $${globalValueUsdt.toFixed(4)} | Gross: $${grossProfit.toFixed(4)} | Net: $${estimatedNetProfit.toFixed(4)}`);
 
                         if (estimatedNetProfit > targetProfit) {
-                            isProfitable = true;
-                            console.log(`[Strategy] ✅ ${searchTag} IS PROFITABLE on ${bestRoute}! Executing...`);
+                            // CIRCUIT BREAKER: Reject unrealistic profits (>20%)
+                            const roi = (estimatedNetProfit / Number(this.tradeAmount)) * 100;
+                            if (roi > 20.0) {
+                                console.warn(`[Strategy] ⚠️ CIRCUIT BREAKER: Trade rejected due to unrealistic ROI (${roi.toFixed(2)}%). Likely data error.`);
+                                isProfitable = false;
+                            } else {
+                                isProfitable = true;
+                                console.log(`[Strategy] ✅ ${searchTag} IS PROFITABLE on ${bestRoute}! Executing...`);
+                            }
                         } else if (grossProfit > 0) {
                             // Provide feedback: Trade found but gas/profit too low
                             const spreadPct = (grossProfit / Number(this.tradeAmount)) * 100;
