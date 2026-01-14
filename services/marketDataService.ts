@@ -59,53 +59,65 @@ export const fetchCurrentPrice = async (symbol: string = 'POLUSDT'): Promise<num
     // Normalize symbols for Binance (WMATIC -> MATIC)
     const normalizedSymbol = symbol.replace('WMATIC', 'MATIC').replace('POL', 'MATIC');
 
-    try {
-        const response = await fetch(`${BYBIT_V5_URL}/tickers?category=linear&symbol=${normalizedSymbol}`);
-        const data = await response.json();
+    // List of symbol variations to try (e.g., POLUSDT, MATICUSDT)
+    const candidates = [normalizedSymbol];
+    if (symbol !== normalizedSymbol) candidates.push(symbol);
+    if (symbol.includes('POL') && !candidates.includes('MATICUSDT')) candidates.push(symbol.replace('POL', 'MATIC'));
+    if (symbol.includes('MATIC') && !candidates.includes('POLUSDT')) candidates.push(symbol.replace('MATIC', 'POL'));
 
-        if (data.retCode === 0 && data.result && data.result.list && data.result.list.length > 0) {
-            return parseFloat(data.result.list[0].lastPrice);
-        }
-        throw new Error("Bybit price empty");
-    } catch (error) {
-        console.warn(`[MarketData] Bybit price failed for ${normalizedSymbol}, trying Binance fallback...`);
+    // 1. Try Bybit
+    for (const s of candidates) {
         try {
-            const binanceUrl = `/binance-api/api/v3/ticker/price?symbol=${normalizedSymbol}`;
-            const response = await fetch(binanceUrl);
+            const response = await fetch(`${BYBIT_V5_URL}/tickers?category=linear&symbol=${s}`);
             const data = await response.json();
-            return parseFloat(data.price);
-        } catch (bError) {
-            console.warn(`[MarketData] Binance failed, trying CoinGecko...`);
-            try {
-                // CoinGecko fallback (no CORS issues)
-                const coinGeckoMap: { [key: string]: string } = {
-                    'POLUSDT': 'matic-network',
-                    'MATICUSDT': 'matic-network',
-                    'WMATICUSDT': 'matic-network',
-                    'ETHUSDT': 'ethereum',
-                    'BTCUSDT': 'bitcoin',
-                    'USDCUSDT': 'usd-coin',
-                    'DAIUSDT': 'dai',
-                    'LINKUSDT': 'chainlink',
-                    'UNIUSDT': 'uniswap',
-                    'GHSTUSDT': 'aavegotchi',
-                    'LDOUSDT': 'lido-dao',
-                    'GRTUSDT': 'the-graph'
-                };
-                const coinId = coinGeckoMap[normalizedSymbol] || coinGeckoMap[symbol];
-
-                if (!coinId) {
-                    throw new Error(`CoinGecko ID not found for ${symbol} / ${normalizedSymbol}`);
-                }
-
-                const cgUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd`;
-                const cgResp = await fetch(cgUrl);
-                const cgData = await cgResp.json();
-                return cgData[coinId]?.usd || 0;
-            } catch (cgError) {
-                console.error(`[MarketData] All price sources failed for ${symbol}`, cgError);
-                return 0;
+            if (data.retCode === 0 && data.result?.list?.length > 0) {
+                return parseFloat(data.result.list[0].lastPrice);
             }
+        } catch (e) { /* continued */ }
+    }
+
+    // 2. Try Binance
+    for (const s of candidates) {
+        try {
+            const response = await fetch(`/binance-api/api/v3/ticker/price?symbol=${s}`);
+            const data = await response.json();
+            if (data.price) return parseFloat(data.price);
+        } catch (e) { /* continued */ }
+    }
+
+    console.warn(`[MarketData] Exchanges failed for ${symbol}, trying CoinGecko...`);
+    try {
+        console.warn(`[MarketData] Binance failed, trying CoinGecko...`);
+        try {
+            // CoinGecko fallback (no CORS issues)
+            const coinGeckoMap: { [key: string]: string } = {
+                'POLUSDT': 'matic-network',
+                'MATICUSDT': 'matic-network',
+                'WMATICUSDT': 'matic-network',
+                'ETHUSDT': 'ethereum',
+                'BTCUSDT': 'bitcoin',
+                'USDCUSDT': 'usd-coin',
+                'DAIUSDT': 'dai',
+                'LINKUSDT': 'chainlink',
+                'UNIUSDT': 'uniswap',
+                'GHSTUSDT': 'aavegotchi',
+                'LDOUSDT': 'lido-dao',
+                'GRTUSDT': 'the-graph'
+            };
+            const coinId = coinGeckoMap[normalizedSymbol] || coinGeckoMap[symbol];
+
+            if (!coinId) {
+                throw new Error(`CoinGecko ID not found for ${symbol} / ${normalizedSymbol}`);
+            }
+
+            const cgUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd`;
+            const cgResp = await fetch(cgUrl);
+            const cgData = await cgResp.json();
+            return cgData[coinId]?.usd || 0;
+        } catch (cgError) {
+            console.error(`[MarketData] All price sources failed for ${symbol}`, cgError);
+            return 0;
         }
+    }
     }
 };
