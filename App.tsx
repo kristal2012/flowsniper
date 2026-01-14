@@ -351,13 +351,14 @@ const App: React.FC = () => {
         };
 
         setSniperLogs(prev => {
-          // If it's a pulse/scan log, we replace the previous pulse log to keep the list clean
-          if (newStep.type === 'SCAN_PULSE' || newStep.status === 'FAILED') {
-            const filtered = prev.filter(l => l.status !== 'EXPIRED');
-            return [mappedStep, ...filtered].slice(0, 15);
+          // Pulse Logic: Ensure the user sees the bot heartbeat
+          if (newStep.type === 'SCAN_PULSE') {
+            // Keep the last pulse visible, remove older pulses to avoid clutter
+            const withoutOldPulses = prev.filter(l => l.status !== 'EXPIRED' && !l.path.join('').includes('Scanning'));
+            return [mappedStep, ...withoutOldPulses].slice(0, 15);
           }
-          // Real successful trades are always added at the top and stay there
-          return [mappedStep, ...prev].slice(0, 25);
+          // Real successful trades are always added at the top
+          return [mappedStep, ...prev].slice(0, 50);
         });
 
         if (newStep.profit > 0) {
