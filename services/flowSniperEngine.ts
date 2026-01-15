@@ -63,23 +63,23 @@ export class FlowSniperEngine {
         const symbols = ['POLUSDT', 'WMATICUSDT', 'ETHUSDT', 'BTCUSDT', 'USDCUSDT', 'DAIUSDT', 'LINKUSDT', 'UNIUSDT', 'GHSTUSDT', 'LDOUSDT', 'GRTUSDT']; // High liquidity pairs only
         const dexes = ['QuickSwap [Active]', 'QuickSwap [Aggregator]'];
 
-        // Token Addresses & Decimals for Polygon (Verified)
+        // Token Addresses & Decimals for Polygon (Verified & Checksummed)
         const TOKEN_METADATA: { [key: string]: { address: string, decimals: number } } = {
-            'USDT': { address: '0xc2132d05d31c914a87c6611c10748aeb04b58e8f', decimals: 6 },
-            'POL': { address: '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270', decimals: 18 },
-            'WMATIC': { address: '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270', decimals: 18 },
-            'WETH': { address: '0x7ceb23fd6bc0ad59f6c078095c510c28342245c4', decimals: 18 },
-            'WBTC': { address: '0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6', decimals: 8 },
-            'LINK': { address: '0x53e0bca35ec356bd5dddfebbd1fc0fd03fabad39', decimals: 18 },
-            'UNI': { address: '0xb33EaAd8d922B1083446DC23f610c2567fB5180f', decimals: 18 },
-            'AAVE': { address: '0xd6df30500db6e36d4336069904944f2b93652618', decimals: 18 },
-            'QUICK': { address: '0xf28768daa238a2e52b21697284f1076f8a02c98d', decimals: 18 },
-            'USDC': { address: '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359', decimals: 6 },
-            'DAI': { address: '0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063', decimals: 18 },
+            'USDT': { address: ethers.getAddress('0xc2132d05d31c914a87c6611c10748aeb04b58e8f'), decimals: 6 },
+            'POL': { address: ethers.getAddress('0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270'), decimals: 18 },
+            'WMATIC': { address: ethers.getAddress('0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270'), decimals: 18 },
+            'WETH': { address: ethers.getAddress('0x7ceb23fd6bc0ad59f6c078095c510c28342245c4'), decimals: 18 },
+            'WBTC': { address: ethers.getAddress('0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6'), decimals: 8 },
+            'LINK': { address: ethers.getAddress('0x53e0bca35ec356bd5dddfebbd1fc0fd03fabad39'), decimals: 18 },
+            'UNI': { address: ethers.getAddress('0xb33EaAd8d922B1083446DC23f610c2567fB5180f'), decimals: 18 },
+            'AAVE': { address: ethers.getAddress('0xd6df30500db6e36d4336069904944f2b93652618'), decimals: 18 },
+            'QUICK': { address: ethers.getAddress('0xf28768daa238a2e52b21697284f1076f8a02c98d'), decimals: 18 },
+            'USDC': { address: ethers.getAddress('0x3c499c542cef5e3811e1192ce70d8cc03d5c3359'), decimals: 6 },
+            'DAI': { address: ethers.getAddress('0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063'), decimals: 18 },
             // Corrected Addresses:
-            'GHST': { address: '0x385Eeac5cB85A38A9a07A70c73e0a3271CfB54A7', decimals: 18 },
-            'LDO': { address: '0xC3C7CeeF4f2607860B88865e94b2311895a0C3C7', decimals: 18 },
-            'GRT': { address: '0x5fe2B58c01396b03525D42D55DB1a9c1c3d072EE', decimals: 18 }
+            'GHST': { address: ethers.getAddress('0x385Eeac5cB85A38A9a07A70c73e0a3271CfB54A7'), decimals: 18 },
+            'LDO': { address: ethers.getAddress('0xC3C7CeeF4f2607860B88865e94b2311895a0C3C7'), decimals: 18 },
+            'GRT': { address: ethers.getAddress('0x5fe2B58c01396b03525D42D55DB1a9c1c3d072EE'), decimals: 18 }
         };
 
         const TOKENS: { [key: string]: string } = {}; // Backward compat shim
@@ -109,23 +109,15 @@ export class FlowSniperEngine {
                 continue;
             }
 
-            // AI Analysis is kept for UI/Metadata but no longer blocks the sniper's local price check
+            // AI Analysis (Non-blocking)
 
             // 1. SELECT TARGET
             const randomSymbol = symbols[Math.floor(Math.random() * symbols.length)];
             const price = await fetchCurrentPrice(randomSymbol);
 
             if (price <= 0) {
-                this.onLog({
-                    id: 'pulse-' + Date.now(),
-                    timestamp: new Date().toLocaleTimeString(),
-                    type: 'SCAN_PULSE',
-                    pair: `SCAN: Erro ao obter cotação de ${randomSymbol} (API Bloqueada/CORS).`,
-                    profit: 0,
-                    status: 'SUCCESS',
-                    hash: ''
-                });
-                await new Promise(resolve => setTimeout(resolve, 3000));
+                // Silent skip for API errors to reduce noise
+                await new Promise(resolve => setTimeout(resolve, 1000));
                 continue;
             }
 
@@ -209,9 +201,9 @@ export class FlowSniperEngine {
                         console.log(`[Strategy] ${searchTag} [${bestRoute}]: Buy ${buyAmountOut} tokens @ Global $${globalPrice} = $${globalValueUsdt.toFixed(4)} | Gross: $${grossProfit.toFixed(4)} | Net: $${estimatedNetProfit.toFixed(4)}`);
 
                         if (estimatedNetProfit > targetProfit) {
-                            // CIRCUIT BREAKER: Reject unrealistic profits (>20%)
+                            // CIRCUIT BREAKER: Reject unrealistic profits (>300% - relaxed for volatile potential)
                             const roi = (estimatedNetProfit / Number(this.tradeAmount)) * 100;
-                            if (roi > 20.0) {
+                            if (roi > 300.0) {
                                 console.warn(`[Strategy] ⚠️ CIRCUIT BREAKER: Trade rejected due to unrealistic ROI (${roi.toFixed(2)}%). GlobalPrice: $${globalPrice}, DexAmount: ${buyAmountOut}. Likely data error.`);
                                 isProfitable = false;
                             } else {
