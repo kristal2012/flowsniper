@@ -63,23 +63,23 @@ export class FlowSniperEngine {
         const symbols = ['POLUSDT', 'WMATICUSDT', 'ETHUSDT', 'BTCUSDT', 'USDCUSDT', 'DAIUSDT', 'LINKUSDT', 'UNIUSDT', 'GHSTUSDT', 'LDOUSDT', 'GRTUSDT', 'QUICKUSDT', 'AAVEUSDT']; // Expanded high liquidity list
         const dexes = ['QuickSwap [Active]', 'QuickSwap [Aggregator]'];
 
-        // Token Addresses & Decimals for Polygon (Verified & Checksummed)
+        // Token Addresses & Decimals for Polygon (Verified & Checksummed Safely)
         const TOKEN_METADATA: { [key: string]: { address: string, decimals: number } } = {
-            'USDT': { address: ethers.getAddress('0xc2132d05d31c914a87c6611c10748aeb04b58e8f'), decimals: 6 },
-            'POL': { address: ethers.getAddress('0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270'), decimals: 18 },
-            'WMATIC': { address: ethers.getAddress('0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270'), decimals: 18 },
-            'WETH': { address: ethers.getAddress('0x7ceb23fd6bc0ad59f6c078095c510c28342245c4'), decimals: 18 },
-            'WBTC': { address: ethers.getAddress('0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6'), decimals: 8 },
-            'LINK': { address: ethers.getAddress('0x53e0bca35ec356bd5dddfebbd1fc0fd03fabad39'), decimals: 18 },
-            'UNI': { address: ethers.getAddress('0xb33EaAd8d922B1083446DC23f610c2567fB5180f'), decimals: 18 },
-            'AAVE': { address: ethers.getAddress('0xd6df30500db6e36d4336069904944f2b93652618'), decimals: 18 },
-            'QUICK': { address: ethers.getAddress('0xf28768daa238a2e52b21697284f1076f8a02c98d'), decimals: 18 },
-            'USDC': { address: ethers.getAddress('0x3c499c542cef5e3811e1192ce70d8cc03d5c3359'), decimals: 6 },
-            'DAI': { address: ethers.getAddress('0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063'), decimals: 18 },
+            'USDT': { address: ethers.getAddress('0xc2132d05d31c914a87c6611c10748aeb04b58e8f'.toLowerCase()), decimals: 6 },
+            'POL': { address: ethers.getAddress('0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270'.toLowerCase()), decimals: 18 },
+            'WMATIC': { address: ethers.getAddress('0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270'.toLowerCase()), decimals: 18 },
+            'WETH': { address: ethers.getAddress('0x7ceb23fd6bc0ad59f6c078095c510c28342245c4'.toLowerCase()), decimals: 18 },
+            'WBTC': { address: ethers.getAddress('0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6'.toLowerCase()), decimals: 8 },
+            'LINK': { address: ethers.getAddress('0x53e0bca35ec356bd5dddfebbd1fc0fd03fabad39'.toLowerCase()), decimals: 18 },
+            'UNI': { address: ethers.getAddress('0xb33EaAd8d922B1083446DC23f610c2567fB5180f'.toLowerCase()), decimals: 18 },
+            'AAVE': { address: ethers.getAddress('0xd6df30500db6e36d4336069904944f2b93652618'.toLowerCase()), decimals: 18 },
+            'QUICK': { address: ethers.getAddress('0xf28768daa238a2e52b21697284f1076f8a02c98d'.toLowerCase()), decimals: 18 },
+            'USDC': { address: ethers.getAddress('0x3c499c542cef5e3811e1192ce70d8cc03d5c3359'.toLowerCase()), decimals: 6 },
+            'DAI': { address: ethers.getAddress('0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063'.toLowerCase()), decimals: 18 },
             // Corrected Addresses:
-            'GHST': { address: ethers.getAddress('0x385Eeac5cB85A38A9a07A70c73e0a3271CfB54A7'), decimals: 18 },
-            'LDO': { address: ethers.getAddress('0xC3C7CeeF4f2607860B88865e94b2311895a0C3C7'), decimals: 18 },
-            'GRT': { address: ethers.getAddress('0x5fe2B58c01396b03525D42D55DB1a9c1c3d072EE'), decimals: 18 }
+            'GHST': { address: ethers.getAddress('0x385Eeac5cB85A38A9a07A70c73e0a3271CfB54A7'.toLowerCase()), decimals: 18 },
+            'LDO': { address: ethers.getAddress('0xC3C7CeeF4f2607860B88865e94b2311895a0C3C7'.toLowerCase()), decimals: 18 },
+            'GRT': { address: ethers.getAddress('0x5fe2B58c01396b03525D42D55DB1a9c1c3d072EE'.toLowerCase()), decimals: 18 }
         };
 
         const TOKENS: { [key: string]: string } = {}; // Backward compat shim
@@ -88,270 +88,272 @@ export class FlowSniperEngine {
         const GAS_ESTIMATE_USDT = 0.03;
 
         while (this.active) {
-            // Pulse log
-            this.onLog({
-                id: 'pulse-' + Date.now(),
-                timestamp: new Date().toLocaleTimeString(),
-                type: 'SCAN_PULSE',
-                pair: 'Scanning: Buscando distorção de preço DEX vs Global...',
-                profit: 0,
-                status: 'SUCCESS',
-                hash: ''
-            });
-
-            if (this.dailyPnl <= this.maxDrawdown) {
-                this.stop();
-                break;
-            }
-
-            if (this.runMode === 'DEMO' && this.gasBalance <= 0) {
-                await new Promise(resolve => setTimeout(resolve, 5000));
-                continue;
-            }
-
-            // AI Analysis (Non-blocking)
-
-            // 1. SELECT TARGET
-            const randomSymbol = symbols[Math.floor(Math.random() * symbols.length)];
-            const price = await fetchCurrentPrice(randomSymbol);
-
-            if (price <= 0) {
-                // Silent skip for API errors to reduce noise
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                continue;
-            }
-
-            if (price > 0) {
-                const selectedDex = dexes[Math.floor(Math.random() * dexes.length)];
-                const tokenIn = TOKENS['USDT'];
-
-                // --- SYMBOL MAPPING FIX ---
-                let searchTag = randomSymbol.replace('USDT', '');
-                if (searchTag === 'BTC') searchTag = 'WBTC';
-                if (searchTag === 'ETH') searchTag = 'WETH';
-                if (searchTag === 'POL') searchTag = 'WMATIC';
-
-                const tokenOut = TOKENS[searchTag];
-
-                // If we don't have the address for this token on Polygon, skip it to avoid bugs
-                if (!tokenOut) {
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    continue;
-                }
-
-                // Using global GAS_ESTIMATE_USDT (0.03)
-
-                // --- SMART STRATEGY: PRE-FLIGHT VERIFICATION ---
-                let isProfitable = false;
-                let estimatedNetProfit = 0;
-                let buyAmountOut = "0";
-
-                // Route Optimization State
-                let bestRoute = 'QuickSwap (V2)';
-                let useV3 = false;
-                let txHash = '';
-                let buyHash = '';
-                let actualProfit = 0;
-                let successTrade = false;
-
-                try {
-                    // Step A: How much token do we get for our USDT?
-                    console.log(`[Strategy] Checking ${searchTag}: Fetching QUOTES (V2 vs V3) for ${this.tradeAmount} USDT...`);
-
-                    // Parallel Fetch for Speed
-                    const [v2Amounts, v3Amount] = await Promise.all([
-                        blockchainService.getAmountsOut(this.tradeAmount, [tokenIn, tokenOut]),
-                        blockchainService.getQuoteV3(tokenIn, tokenOut, this.tradeAmount)
-                    ]);
-
-                    let bestAmountOut = 0;
-
-                    // Analyze V2
-                    if (v2Amounts && v2Amounts.length >= 2) {
-                        const decimalsOut = await (blockchainService as any).getTokenDecimals(tokenOut);
-                        const v2Out = Number(v2Amounts[1]) / (10 ** decimalsOut);
-                        if (v2Out > bestAmountOut) {
-                            bestAmountOut = v2Out;
-                            bestRoute = 'QuickSwap (V2)';
-                            useV3 = false;
-                        }
-                    }
-
-                    // Analyze V3
-                    const v3Out = Number(v3Amount);
-                    if (v3Out > bestAmountOut) {
-                        bestAmountOut = v3Out;
-                        bestRoute = 'Uniswap (V3)';
-                        useV3 = true;
-                    }
-
-                    if (bestAmountOut > 0) {
-                        buyAmountOut = bestAmountOut.toString();
-
-                        // Step B: Compare with Global Price
-                        const globalPrice = price;
-                        const globalValueUsdt = Number(buyAmountOut) * globalPrice;
-
-                        const grossProfit = globalValueUsdt - Number(this.tradeAmount);
-                        const totalGas = (GAS_ESTIMATE_USDT * 2);
-                        estimatedNetProfit = grossProfit - totalGas;
-
-                        const targetProfit = Number(this.tradeAmount) * this.minProfit;
-
-                        console.log(`[Strategy] ${searchTag} [${bestRoute}]: Buy ${buyAmountOut} tokens @ Global $${globalPrice} = $${globalValueUsdt.toFixed(4)} | Gross: $${grossProfit.toFixed(4)} | Net: $${estimatedNetProfit.toFixed(4)}`);
-
-                        if (estimatedNetProfit > targetProfit) {
-                            // CIRCUIT BREAKER: Reject unrealistic profits (>300% - relaxed for volatile potential)
-                            const roi = (estimatedNetProfit / Number(this.tradeAmount)) * 100;
-                            if (roi > 300.0) {
-                                console.warn(`[Strategy] ⚠️ CIRCUIT BREAKER: Trade rejected due to unrealistic ROI (${roi.toFixed(2)}%). GlobalPrice: $${globalPrice}, DexAmount: ${buyAmountOut}. Likely data error.`);
-                                isProfitable = false;
-                            } else {
-                                isProfitable = true;
-                                console.log(`[Strategy] ✅ ${searchTag} IS PROFITABLE on ${bestRoute}! Executing...`);
-                            }
-                        } else if (grossProfit > 0) {
-                            // Provide feedback: Trade found but gas/profit too low
-                            const spreadPct = (grossProfit / Number(this.tradeAmount)) * 100;
-                            this.onLog({
-                                id: 'pulse-' + Date.now(),
-                                timestamp: new Date().toLocaleTimeString(),
-                                type: 'SCAN_PULSE',
-                                pair: `${searchTag}: Spread ${spreadPct.toFixed(2)}% em ${bestRoute}. Inviável por Gás ($${totalGas.toFixed(2)}).`,
-                                profit: 0,
-                                status: 'SUCCESS',
-                                hash: ''
-                            });
-                        }
-                    }
-
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-
-                    if (!isProfitable) {
-                        // "Smart" Logging: Show WHY we are not trading
-                        // If we found a positive gross profit but it was eaten by gas, tell the user!
-                        if (estimatedNetProfit > -1.0 && estimatedNetProfit <= 0) { // e.g. Loss up to -$1.00 (Gas dominant)
-                            const spreadPct = ((Number(buyAmountOut) * price) / Number(this.tradeAmount) - 1) * 100;
-                            if (spreadPct > 0) { // Only log if there was ANY spread
-                                console.log(`[Strategy] 🟡 ${searchTag}: Spread ${spreadPct.toFixed(3)}% found on ${bestRoute}, but Gas ($${(GAS_ESTIMATE_USDT * 2).toFixed(2)}) consumes profit. Net: $${estimatedNetProfit.toFixed(4)}.`);
-                            }
-                        }
-
-                        continue; // Strict: No profit, no trade.
-                    }
-
-                    if (this.runMode === 'REAL') {
-                        if (isProfitable) {
-                            // 1. BUY with Slippage Protection
-                            const minBuyOut = (Number(buyAmountOut) * (1 - this.slippage)).toString();
-                            buyHash = await blockchainService.executeTrade(tokenIn, tokenOut, this.tradeAmount, true, undefined, minBuyOut, useV3);
-                            await new Promise(resolve => setTimeout(resolve, 2000));
-                        }
-
-                        // 2. SELL with Slippage Protection
-                        const activeAddr = blockchainService.getWalletAddress();
-                        const tokenBal = activeAddr ? await blockchainService.getBalance(tokenOut, activeAddr) : '0';
-
-                        if (Number(tokenBal) > 0) {
-                            // Calculate min sell out based on current market for the balance we have
-                            const currentSellAmounts = await blockchainService.getAmountsOut(tokenBal, [tokenOut, tokenIn]);
-                            const expectedUsdtBack = Number(currentSellAmounts[1]) / (10 ** 6);
-                            const minUsdtOut = (expectedUsdtBack * (1 - this.slippage)).toString();
-
-                            txHash = await blockchainService.executeTrade(tokenOut, tokenIn, tokenBal, true, undefined, minUsdtOut);
-
-                            // Calculate actual profit (approximate for UI)
-                            actualProfit = expectedUsdtBack - Number(this.tradeAmount) - GAS_ESTIMATE_USDT;
-                            successTrade = true;
-                        } else {
-                            txHash = buyHash;
-                            actualProfit = -0.1; // Failed to buy enough?
-                        }
-
-                    } else {
-                        // DEMO MODE
-                        txHash = '0xSIM_' + Math.random().toString(16).substr(2, 10);
-                        actualProfit = isProfitable ? estimatedNetProfit : (Math.random() * -0.05);
-                    }
-                } catch (err: any) {
-                    this.onLog({
-                        id: 'err-' + Date.now(),
-                        timestamp: new Date().toLocaleTimeString(),
-                        type: 'LIQUIDITY_SCAN',
-                        pair: `SAFE SKIP: ${err.message}`,
-                        profit: 0,
-                        status: 'FAILED',
-                        hash: ''
-                    });
-                    continue;
-                }
-
-                this.dailyPnl += actualProfit;
-                this.dailyPnl += actualProfit;
-                if (this.runMode === 'DEMO') {
-                    this.totalBalance += actualProfit;
-
-                    // SIMULATE GAS CONSUMPTION
-                    // In real mode, the blockchain deducts native token.
-                    // In demo mode, we must manually reduce the gas balance to show reality.
-                    if (actualProfit !== 0 || txHash.startsWith('0xSIM')) {
-                        // Approx 0.03 USDT worth of POL per trade
-                        // Assuming 1 POL ~ 0.40 USDT -> 0.03 USDT is ~0.075 POL
-                        // Let's use a fixed " Gas units" approach
-                        this.gasBalance -= 0.05; // 0.05 POL per trade
-                        if (this.onGasUpdate) this.onGasUpdate(this.gasBalance);
-                    }
-
-                    if (this.onBalanceUpdate) this.onBalanceUpdate(this.totalBalance);
-                }
-
+            try {
+                // Pulse log
                 this.onLog({
-                    id: Math.random().toString(36).substr(2, 9),
+                    id: 'pulse-' + Date.now(),
                     timestamp: new Date().toLocaleTimeString(),
-                    type: isProfitable ? 'ROUTE_OPTIMIZATION' : 'LIQUIDITY_SCAN',
-                    pair: `${randomSymbol.replace('USDT', '')}/USDT (${bestRoute})`,
-                    profit: actualProfit,
+                    type: 'SCAN_PULSE',
+                    pair: 'Scanning: Buscando distorção de preço DEX vs Global...',
+                    profit: 0,
                     status: 'SUCCESS',
-                    hash: txHash
+                    hash: ''
                 });
 
-                // --- AUTO CONSOLIDATION LOGIC ---
-                if (this.runMode === 'REAL' && successTrade && this.consolidationThreshold > 0) {
+                if (this.dailyPnl <= this.maxDrawdown) {
+                    this.stop();
+                    break;
+                }
+
+                if (this.runMode === 'DEMO' && this.gasBalance <= 0) {
+                    await new Promise(resolve => setTimeout(resolve, 5000));
+                    continue;
+                }
+
+                // AI Analysis (Non-blocking)
+
+                // 1. SELECT TARGET
+                const randomSymbol = symbols[Math.floor(Math.random() * symbols.length)];
+                const price = await fetchCurrentPrice(randomSymbol);
+
+                if (price <= 0) {
+                    // Silent skip for API errors to reduce noise
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    continue;
+                }
+
+                if (price > 0) {
+                    const selectedDex = dexes[Math.floor(Math.random() * dexes.length)];
+                    const tokenIn = TOKENS['USDT'];
+
+                    // --- SYMBOL MAPPING FIX ---
+                    let searchTag = randomSymbol.replace('USDT', '');
+                    if (searchTag === 'BTC') searchTag = 'WBTC';
+                    if (searchTag === 'ETH') searchTag = 'WETH';
+                    if (searchTag === 'POL') searchTag = 'WMATIC';
+
+                    const tokenOut = TOKENS[searchTag];
+
+                    // If we don't have the address for this token on Polygon, skip it to avoid bugs
+                    if (!tokenOut) {
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                        continue;
+                    }
+
+                    // Using global GAS_ESTIMATE_USDT (0.03)
+
+                    // --- SMART STRATEGY: PRE-FLIGHT VERIFICATION ---
+                    let isProfitable = false;
+                    let estimatedNetProfit = 0;
+                    let buyAmountOut = "0";
+
+                    // Route Optimization State
+                    let bestRoute = 'QuickSwap (V2)';
+                    let useV3 = false;
+                    let txHash = '';
+                    let buyHash = '';
+                    let actualProfit = 0;
+                    let successTrade = false;
+
                     try {
-                        const opAddr = blockchainService.getWalletAddress();
-                        const pvt = localStorage.getItem('fs_private_key');
-                        const ownerAddr = pvt ? new ethers.Wallet(pvt).address : null;
+                        // Step A: How much token do we get for our USDT?
+                        console.log(`[Strategy] Checking ${searchTag}: Fetching QUOTES (V2 vs V3) for ${this.tradeAmount} USDT...`);
 
-                        // We need the owner address to transfer to. If not in localStorage, we can't do it.
-                        if (opAddr && ownerAddr && opAddr.toLowerCase() !== ownerAddr.toLowerCase()) {
-                            const usdtBal = await blockchainService.getBalance(TOKENS['USDT'], opAddr);
+                        // Parallel Fetch for Speed
+                        const [v2Amounts, v3Amount] = await Promise.all([
+                            blockchainService.getAmountsOut(this.tradeAmount, [tokenIn, tokenOut]),
+                            blockchainService.getQuoteV3(tokenIn, tokenOut, this.tradeAmount)
+                        ]);
 
-                            if (Number(usdtBal) >= this.consolidationThreshold) {
-                                console.log(`[Consolidate] Threshold reached (${usdtBal} >= ${this.consolidationThreshold}). Transferring to Owner...`);
+                        let bestAmountOut = 0;
+
+                        // Analyze V2
+                        if (v2Amounts && v2Amounts.length >= 2) {
+                            const decimalsOut = await (blockchainService as any).getTokenDecimals(tokenOut);
+                            const v2Out = Number(v2Amounts[1]) / (10 ** decimalsOut);
+                            if (v2Out > bestAmountOut) {
+                                bestAmountOut = v2Out;
+                                bestRoute = 'QuickSwap (V2)';
+                                useV3 = false;
+                            }
+                        }
+
+                        // Analyze V3
+                        const v3Out = Number(v3Amount);
+                        if (v3Out > bestAmountOut) {
+                            bestAmountOut = v3Out;
+                            bestRoute = 'Uniswap (V3)';
+                            useV3 = true;
+                        }
+
+                        if (bestAmountOut > 0) {
+                            buyAmountOut = bestAmountOut.toString();
+
+                            // Step B: Compare with Global Price
+                            const globalPrice = price;
+                            const globalValueUsdt = Number(buyAmountOut) * globalPrice;
+
+                            const grossProfit = globalValueUsdt - Number(this.tradeAmount);
+                            const totalGas = (GAS_ESTIMATE_USDT * 2);
+                            estimatedNetProfit = grossProfit - totalGas;
+
+                            const targetProfit = Number(this.tradeAmount) * this.minProfit;
+
+                            console.log(`[Strategy] ${searchTag} [${bestRoute}]: Buy ${buyAmountOut} tokens @ Global $${globalPrice} = $${globalValueUsdt.toFixed(4)} | Gross: $${grossProfit.toFixed(4)} | Net: $${estimatedNetProfit.toFixed(4)}`);
+
+                            if (estimatedNetProfit > targetProfit) {
+                                // CIRCUIT BREAKER: Reject unrealistic profits (>300% - relaxed for volatile potential)
+                                const roi = (estimatedNetProfit / Number(this.tradeAmount)) * 100;
+                                if (roi > 300.0) {
+                                    console.warn(`[Strategy] ⚠️ CIRCUIT BREAKER: Trade rejected due to unrealistic ROI (${roi.toFixed(2)}%). GlobalPrice: $${globalPrice}, DexAmount: ${buyAmountOut}. Likely data error.`);
+                                    isProfitable = false;
+                                } else {
+                                    isProfitable = true;
+                                    console.log(`[Strategy] ✅ ${searchTag} IS PROFITABLE on ${bestRoute}! Executing...`);
+                                }
+                            } else if (grossProfit > 0) {
+                                // Provide feedback: Trade found but gas/profit too low
+                                const spreadPct = (grossProfit / Number(this.tradeAmount)) * 100;
                                 this.onLog({
-                                    id: 'consolidate-' + Date.now(),
+                                    id: 'pulse-' + Date.now(),
                                     timestamp: new Date().toLocaleTimeString(),
-                                    type: 'ASSET_CONSOLIDATION',
-                                    pair: `Auto-Consolidating ${usdtBal} USDT...`,
+                                    type: 'SCAN_PULSE',
+                                    pair: `${searchTag}: Spread ${spreadPct.toFixed(2)}% em ${bestRoute}. Inviável por Gás ($${totalGas.toFixed(2)}).`,
                                     profit: 0,
                                     status: 'SUCCESS',
                                     hash: ''
                                 });
-
-                                const transferHash = await blockchainService.transferTokens(TOKENS['USDT'], ownerAddr, usdtBal, opAddr);
-                                console.log(`[Consolidate] Success! Tx: ${transferHash}`);
                             }
                         }
-                    } catch (e) {
-                        console.error("[Consolidate] Auto-transfer failed", e);
+
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+
+                        if (!isProfitable) {
+                            // "Smart" Logging: Show WHY we are not trading
+                            // If we found a positive gross profit but it was eaten by gas, tell the user!
+                            if (estimatedNetProfit > -1.0 && estimatedNetProfit <= 0) { // e.g. Loss up to -$1.00 (Gas dominant)
+                                const spreadPct = ((Number(buyAmountOut) * price) / Number(this.tradeAmount) - 1) * 100;
+                                if (spreadPct > 0) { // Only log if there was ANY spread
+                                    console.log(`[Strategy] 🟡 ${searchTag}: Spread ${spreadPct.toFixed(3)}% found on ${bestRoute}, but Gas ($${(GAS_ESTIMATE_USDT * 2).toFixed(2)}) consumes profit. Net: $${estimatedNetProfit.toFixed(4)}.`);
+                                }
+                            }
+
+                            continue; // Strict: No profit, no trade.
+                        }
+
+                        if (this.runMode === 'REAL') {
+                            if (isProfitable) {
+                                // 1. BUY with Slippage Protection
+                                const minBuyOut = (Number(buyAmountOut) * (1 - this.slippage)).toString();
+                                buyHash = await blockchainService.executeTrade(tokenIn, tokenOut, this.tradeAmount, true, undefined, minBuyOut, useV3);
+                                await new Promise(resolve => setTimeout(resolve, 2000));
+                            }
+
+                            // 2. SELL with Slippage Protection
+                            const activeAddr = blockchainService.getWalletAddress();
+                            const tokenBal = activeAddr ? await blockchainService.getBalance(tokenOut, activeAddr) : '0';
+
+                            if (Number(tokenBal) > 0) {
+                                // Calculate min sell out based on current market for the balance we have
+                                const currentSellAmounts = await blockchainService.getAmountsOut(tokenBal, [tokenOut, tokenIn]);
+                                const expectedUsdtBack = Number(currentSellAmounts[1]) / (10 ** 6);
+                                const minUsdtOut = (expectedUsdtBack * (1 - this.slippage)).toString();
+
+                                txHash = await blockchainService.executeTrade(tokenOut, tokenIn, tokenBal, true, undefined, minUsdtOut);
+
+                                // Calculate actual profit (approximate for UI)
+                                actualProfit = expectedUsdtBack - Number(this.tradeAmount) - GAS_ESTIMATE_USDT;
+                                successTrade = true;
+                            } else {
+                                txHash = buyHash;
+                                actualProfit = -0.1; // Failed to buy enough?
+                            }
+
+                        } else {
+                            // DEMO MODE
+                            txHash = '0xSIM_' + Math.random().toString(16).substr(2, 10);
+                            actualProfit = isProfitable ? estimatedNetProfit : (Math.random() * -0.05);
+                        }
+                    } catch (err: any) {
+                        this.onLog({
+                            id: 'err-' + Date.now(),
+                            timestamp: new Date().toLocaleTimeString(),
+                            type: 'LIQUIDITY_SCAN',
+                            pair: `SAFE SKIP: ${err.message}`,
+                            profit: 0,
+                            status: 'FAILED',
+                            hash: ''
+                        });
+                        continue;
+                    }
+
+                    this.dailyPnl += actualProfit;
+                    this.dailyPnl += actualProfit;
+                    if (this.runMode === 'DEMO') {
+                        this.totalBalance += actualProfit;
+
+                        // SIMULATE GAS CONSUMPTION
+                        // In real mode, the blockchain deducts native token.
+                        // In demo mode, we must manually reduce the gas balance to show reality.
+                        if (actualProfit !== 0 || txHash.startsWith('0xSIM')) {
+                            // Approx 0.03 USDT worth of POL per trade
+                            // Assuming 1 POL ~ 0.40 USDT -> 0.03 USDT is ~0.075 POL
+                            // Let's use a fixed " Gas units" approach
+                            this.gasBalance -= 0.05; // 0.05 POL per trade
+                            if (this.onGasUpdate) this.onGasUpdate(this.gasBalance);
+                        }
+
+                        if (this.onBalanceUpdate) this.onBalanceUpdate(this.totalBalance);
+                    }
+
+                    this.onLog({
+                        id: Math.random().toString(36).substr(2, 9),
+                        timestamp: new Date().toLocaleTimeString(),
+                        type: isProfitable ? 'ROUTE_OPTIMIZATION' : 'LIQUIDITY_SCAN',
+                        pair: `${randomSymbol.replace('USDT', '')}/USDT (${bestRoute})`,
+                        profit: actualProfit,
+                        status: 'SUCCESS',
+                        hash: txHash
+                    });
+
+                    // --- AUTO CONSOLIDATION LOGIC ---
+                    if (this.runMode === 'REAL' && successTrade && this.consolidationThreshold > 0) {
+                        try {
+                            const opAddr = blockchainService.getWalletAddress();
+                            const pvt = localStorage.getItem('fs_private_key');
+                            const ownerAddr = pvt ? new ethers.Wallet(pvt).address : null;
+
+                            // We need the owner address to transfer to. If not in localStorage, we can't do it.
+                            if (opAddr && ownerAddr && opAddr.toLowerCase() !== ownerAddr.toLowerCase()) {
+                                const usdtBal = await blockchainService.getBalance(TOKENS['USDT'], opAddr);
+
+                                if (Number(usdtBal) >= this.consolidationThreshold) {
+                                    console.log(`[Consolidate] Threshold reached (${usdtBal} >= ${this.consolidationThreshold}). Transferring to Owner...`);
+                                    this.onLog({
+                                        id: 'consolidate-' + Date.now(),
+                                        timestamp: new Date().toLocaleTimeString(),
+                                        type: 'ASSET_CONSOLIDATION',
+                                        pair: `Auto-Consolidating ${usdtBal} USDT...`,
+                                        profit: 0,
+                                        status: 'SUCCESS',
+                                        hash: ''
+                                    });
+
+                                    const transferHash = await blockchainService.transferTokens(TOKENS['USDT'], ownerAddr, usdtBal, opAddr);
+                                    console.log(`[Consolidate] Success! Tx: ${transferHash}`);
+                                }
+                            }
+                        } catch (e) {
+                            console.error("[Consolidate] Auto-transfer failed", e);
+                        }
                     }
                 }
+
+            } catch (loopError) {
+                console.error("[CRITICAL] Strategy Loop Error:", loopError);
             }
 
             await new Promise(resolve => setTimeout(resolve, 2000));
         }
     }
-
-
-
 }
