@@ -1,5 +1,5 @@
-import { FlowSniperEngine } from './services/flowSniperEngine.js';
-import { FlowStep } from './types.js';
+import { FlowSniperEngine } from './services/flowSniperEngine';
+import { FlowStep } from './types';
 import dotenv from 'dotenv';
 import { ethers } from 'ethers';
 import express from 'express';
@@ -7,8 +7,8 @@ import cors from 'cors';
 import bodyParser from 'body-parser';
 import fs from 'fs';
 import path from 'path';
-import { blockchainService } from './services/blockchainService.js';
-import { proxyManager } from './services/proxy_utils.js';
+import { blockchainService } from './services/blockchainService';
+import { proxyManager } from './services/proxy_utils';
 
 dotenv.config();
 

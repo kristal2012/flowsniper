@@ -1,6 +1,6 @@
-import { FlowStep, FlowOperation } from '../types.js';
-import { fetchCurrentPrice } from './marketDataService.js';
-import { blockchainService } from './blockchainService.js';
+import { FlowStep, FlowOperation } from '../types';
+import { fetchCurrentPrice } from './marketDataService';
+import { blockchainService } from './blockchainService';
 import { ethers } from 'ethers';
 
 export class FlowSniperEngine {

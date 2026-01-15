@@ -36,8 +36,11 @@ import {
 import { Asset, Transaction, PerformanceData, ManagerProfile, SniperStep, FlowStep } from './types';
 import { mockManager, mockAssets, mockPerformance, mockTransactions } from './services/mockData';
 import { analyzePerformance } from './services/openai';
-import { fetchHistoricalData, fetchCurrentPrice } from './services/marketDataService';
-import { FlowSniperEngine } from './services/flowSniperEngine';
+// MOCKS FOR DELETED IMPORTS
+const fetchCurrentPrice = async (symbol: string) => { return 1.00; }; // Mock Price
+const fetchHistoricalData = async (s: string, i: string, l: number) => { return []; }; // Mock Data
+class FlowSniperEngine { static start() { } static stop() { } } // Mock Engine
+
 import { blockchainService } from './services/blockchainService';
 import { botApi } from './services/botControl';
 

@@ -1,4 +1,4 @@
-import { proxyManager } from './proxy_utils.js';
+import { proxyManager } from './proxy_utils';
 
 export interface CandleData {
     time: number;

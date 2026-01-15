@@ -8,12 +8,12 @@ echo.
 echo O site vai abrir no seu navegador.
 echo.
 echo IMPORTANTE:
-echo O site serve apenas para MONITORAR ou TESTAR VISUALMENTE.
-echo As configuracoes que voce mudar NO SITE nao alteram o "ROBO 24H".
+echo Agora voce tem CONTROLE TOTAL pelo site!
+echo As configuracoes que voce mudar NO SITE sao enviadas para o "ROBO 24H".
 echo.
-echo Para mudar o Robo 24h, use o arquivo "EDITAR_CONFIGURACAO.bat".
+echo Voce tambem pode usar o arquivo "EDITAR_CONFIGURACAO.bat" se preferir.
 echo.
 
-call npm run dev
+call npm run dev -- --open
 
 pause
