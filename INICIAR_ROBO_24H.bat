@@ -8,7 +8,8 @@ echo.
 echo [1] Verificando Proxy e Configuracao...
 echo.
 
-REM Start PM2 with our config
+REM Stop and Delete existing process to ensure code refresh
+call pm2 delete flowsniper-headless >nul 2>&1
 call pm2 start ecosystem.config.cjs
 
 echo.
