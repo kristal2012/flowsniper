@@ -60,7 +60,7 @@ export class FlowSniperEngine {
     }
 
     private async run() {
-        const symbols = ['POLUSDT', 'WMATICUSDT', 'ETHUSDT', 'BTCUSDT', 'USDCUSDT', 'DAIUSDT', 'LINKUSDT', 'UNIUSDT', 'GHSTUSDT', 'LDOUSDT', 'GRTUSDT']; // High liquidity pairs only
+        const symbols = ['POLUSDT', 'WMATICUSDT', 'ETHUSDT', 'BTCUSDT', 'USDCUSDT', 'DAIUSDT', 'LINKUSDT', 'UNIUSDT', 'GHSTUSDT', 'LDOUSDT', 'GRTUSDT', 'QUICKUSDT', 'AAVEUSDT']; // Expanded high liquidity list
         const dexes = ['QuickSwap [Active]', 'QuickSwap [Aggregator]'];
 
         // Token Addresses & Decimals for Polygon (Verified & Checksummed)
