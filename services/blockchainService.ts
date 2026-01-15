@@ -538,20 +538,36 @@ export class BlockchainService {
     private async getTokenDecimals(tokenAddress: string): Promise<number> {
         if (tokenAddress === '0x0000000000000000000000000000000000000000') return 18;
 
-        const STABLES = {
-            'USDT': '0xc2132d05d31c914a87c6611c10748aeb04b58e8f',
-            'USDC_B': '0x2791bca1f2de4661ed88a30c99a7a9449aa84174',
-            'USDC_N': '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359',
-        };
-
         const normalized = tokenAddress.toLowerCase();
 
-        // Static mapping for speed/known tokens
-        if (normalized === STABLES.USDT || normalized === STABLES.USDC_B || normalized === STABLES.USDC_N) {
-            return 6;
+        // COMPREHENSIVE STATIC MAPPING (Prevents RPC Errors & "Unrealistic ROI" bugs)
+        const KNOWN_DECIMALS: { [key: string]: number } = {
+            // Stables (6)
+            '0xc2132d05d31c914a87c6611c10748aeb04b58e8f': 6, // USDT
+            '0x2791bca1f2de4661ed88a30c99a7a9449aa84174': 6, // USDC (Bridged)
+            '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359': 6, // USDC (Native)
+
+            // Standard 18
+            '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270': 18, // POL/WMATIC
+            '0x7ceb23fd6bc0ad59f6c078095c510c28342245c4': 18, // WETH
+            '0x53e0bca35ec356bd5dddfebbd1fc0fd03fabad39': 18, // LINK
+            '0xb33EaAd8d922B1083446DC23f610c2567fB5180f': 18, // UNI
+            '0xd6df30500db6e36d4336069904944f2b93652618': 18, // AAVE
+            '0xf28768daa238a2e52b21697284f1076f8a02c98d': 18, // QUICK
+            '0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063': 18, // DAI
+            '0xc3c7ceef4f2607860b88865e94b2311895a0c3c7': 18, // LDO (Corrected)
+            '0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7': 18, // GHST (Corrected)
+            '0x5fe2b58c01396b03525d42d55db1a9c1c3d072ee': 18, // GRT
+
+            // Special (8)
+            '0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6': 8, // WBTC
+        };
+
+        if (KNOWN_DECIMALS[normalized] !== undefined) {
+            return KNOWN_DECIMALS[normalized];
         }
 
-        // Contract call fallback
+        // Contract call fallback (Only for unknown tokens)
         try {
             const provider = this.getProvider();
             const contract = new Contract(tokenAddress, ["function decimals() view returns (uint8)"], provider);
