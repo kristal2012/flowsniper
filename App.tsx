@@ -39,14 +39,88 @@ import { analyzePerformance } from './services/openai';
 import { fetchHistoricalData, fetchCurrentPrice } from './services/marketDataService';
 import { FlowSniperEngine } from './services/flowSniperEngine';
 import { blockchainService } from './services/blockchainService';
+import { botApi } from './services/botControl';
 
 const App: React.FC = () => {
   // Estados de Controle
   const [manager, setManager] = useState<ManagerProfile>(mockManager);
   const [activeTab, setActiveTab] = useState<'overview' | 'assets' | 'gas' | 'robots' | 'settings'>('overview');
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
+
+  // Remote Bot State
   const [botActive, setBotActive] = useState(false);
-  const [mode, setMode] = useState<'REAL' | 'DEMO'>((localStorage.getItem('fs_mode') as 'REAL' | 'DEMO') || 'DEMO');
+  const [isRemoteConnected, setIsRemoteConnected] = useState(false);
+  const [remoteStatus, setRemoteStatus] = useState("Connecting...");
+
+  const [mode, setMode] = useState<'REAL' | 'DEMO'>('DEMO');
+
+  // MISSING STATE RESTORATION
+  const [privateKey, setPrivateKey] = useState(() => localStorage.getItem('fs_private_key') || '');
+  const [rpcUrl, setRpcUrl] = useState(() => localStorage.getItem('fs_polygon_rpc') || '');
+  const [openAiKey, setOpenAiKey] = useState(() => localStorage.getItem('flowsniper_openai_key') || '');
+  const [pvtKeyError, setPvtKeyError] = useState<string | null>(null);
+
+  // Strategy Params (Local State synced to Backend)
+  const [tradeAmount, setTradeAmount] = useState(() => localStorage.getItem('fs_trade_amount') || '3.0');
+  const [slippage, setSlippage] = useState(() => localStorage.getItem('fs_slippage') || '0.5');
+  const [minProfit, setMinProfit] = useState(() => localStorage.getItem('fs_min_profit') || '0.1');
+  const [consolidationThreshold, setConsolidationThreshold] = useState(() => localStorage.getItem('fs_consolidation_threshold') || '10');
+  const [customAllowance, setCustomAllowance] = useState('100');
+
+  // Balances
+  const [realUsdtBalance, setRealUsdtBalance] = useState('0.00');
+  const [realPolBalance, setRealPolBalance] = useState('0.00');
+  const [demoBalance, setDemoBalance] = useState(1000);
+  const [demoGasBalance, setDemoGasBalance] = useState(20);
+  const [operatorAddress, setOperatorAddress] = useState(() => localStorage.getItem('fs_operator_address') || '');
+  const [operatorUsdtBalance, setOperatorUsdtBalance] = useState('0.00');
+  const [operatorPolBalance, setOperatorPolBalance] = useState('0.00');
+
+  // UI Loaders
+  const [isConnectingMetaMask, setIsConnectingMetaMask] = useState(false);
+  const [isSettingUpOperator, setIsSettingUpOperator] = useState(false);
+  const [isGrantingAllowance, setIsGrantingAllowance] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [analysis, setAnalysis] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [sniperLogs, setSniperLogs] = useState<any[]>([]);
+  const [dailyProfit, setDailyProfit] = useState(0);
+  const [dailyLoss, setDailyLoss] = useState(0);
+  const accountMenuRef = useRef<HTMLDivElement>(null);
+
+  // Persist Strategy Params locally too
+  useEffect(() => {
+    localStorage.setItem('fs_trade_amount', tradeAmount);
+    localStorage.setItem('fs_slippage', slippage);
+    localStorage.setItem('fs_min_profit', minProfit);
+    localStorage.setItem('fs_consolidation_threshold', consolidationThreshold);
+    localStorage.setItem('flowsniper_openai_key', openAiKey);
+  }, [tradeAmount, slippage, minProfit, consolidationThreshold, openAiKey]);
+
+  // Mock function if not defined elsewhere
+  const fetchRealBalances = async () => {
+    setIsSyncing(true);
+    try {
+      if (manager.address && manager.address !== mockManager.address) {
+        const usdt = await blockchainService.getBalance('0xc2132d05d31c914a87c6611c10748aeb04b58e8f', manager.address);
+        const pol = await blockchainService.getBalance('0x0000000000000000000000000000000000000000', manager.address);
+        setRealUsdtBalance(Number(usdt).toFixed(2));
+        setRealPolBalance(Number(pol).toFixed(4));
+      }
+      if (operatorAddress) {
+        const opUsdt = await blockchainService.getBalance('0xc2132d05d31c914a87c6611c10748aeb04b58e8f', operatorAddress);
+        const opPol = await blockchainService.getBalance('0x0000000000000000000000000000000000000000', operatorAddress);
+        setOperatorUsdtBalance(Number(opUsdt).toFixed(2));
+        setOperatorPolBalance(Number(opPol).toFixed(4));
+      }
+      setSyncError(null);
+    } catch (e: any) {
+      setSyncError(e.message);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   // Load real address on mount
   useEffect(() => {
@@ -59,409 +133,185 @@ const App: React.FC = () => {
     }
   }, []);
 
-  const [realUsdtBalance, setRealUsdtBalance] = useState<string>('0.00');
-  const [realPolBalance, setRealPolBalance] = useState<string>('0.00');
-  const [operatorPolBalance, setOperatorPolBalance] = useState<string>('0.00');
-  const [operatorUsdtBalance, setOperatorUsdtBalance] = useState<string>('0.00');
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [pvtKeyError, setPvtKeyError] = useState<string | null>(null);
-  const [syncError, setSyncError] = useState<string | null>(null);
-
-  const fetchRealBalances = async () => {
-    if (mode === 'REAL' && manager.address) {
-      // Check if it's the mock address
-      if (manager.address === mockManager.address) {
-        console.warn("[BalanceDebug] Using mock address in REAL mode. balance will be 0.");
-        return;
-      }
-
-      setIsSyncing(true);
-      console.log("[BalanceDebug] --- STARTING EXHAUSTIVE SYNC v4.1.5 ---");
-      console.log("[BalanceDebug] Target Address:", manager.address);
-
-      try {
-        const usdtAddr = '0xc2132d05d31c914a87c6611c10748aeb04b58e8f';
-        const polAddr = '0x0000000000000000000000000000000000000000';
-
-        const usdt = await blockchainService.getBalance(usdtAddr, manager.address).catch(e => '0.00');
-        const pol = await blockchainService.getBalance(polAddr, manager.address).catch(e => '0.00');
-
-        let opPol = '0.00';
-        let opUsdt = '0.00';
-        const opAddr = localStorage.getItem('fs_operator_address');
-        if (opAddr && opAddr !== manager.address) {
-          opPol = await blockchainService.getBalance(polAddr, opAddr).catch(e => '0.00');
-          opUsdt = await blockchainService.getBalance(usdtAddr, opAddr).catch(e => '0.00');
-        }
-
-        // --- CALCULATION LOGIC: EXPLICIT SUM ---
-        // We scan for specific tokens and add their value. 
-        // We NO LONGER blindly trust "usdt" because discovery was removed from getBalance.
-
-        const stablesToScan = [
-          { name: 'USDC Native', addr: '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359' },
-          { name: 'USDC Bridged', addr: '0x2791bca1f2de4661ed88a30c99a7a9449aa84174' },
-          { name: 'DAI', addr: '0x8f3cf7ad29050398801915a133026224328322ea' }
-        ];
-
-        let totalOtherStablesInUsdt = 0;
-        const addressesToScan = [manager.address];
-        if (opAddr && opAddr !== manager.address) addressesToScan.push(opAddr);
-
-        for (const addr of addressesToScan) {
-          for (const s of stablesToScan) {
-            try {
-              const bal = await blockchainService.getBalance(s.addr, addr).catch(() => '0');
-              if (Number(bal) > 0.01) {
-                totalOtherStablesInUsdt += Number(bal); // Stable to USDT parity assumed
-                console.log(`[BalanceFix] Found ${bal} ${s.name} in ${addr === opAddr ? 'Operator' : 'Owner'}`);
-              }
-            } catch (e) { }
-          }
-        }
-
-        // Non-stable assets scan (Market Value)
-        const volatileTokens = [
-          { name: 'WETH', addr: '0x7ceb23fd6bc0ad59f6c078095c510c28342245c4' },
-          { name: 'WBTC', addr: '0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6' },
-          { name: 'AAVE', addr: '0xd6df30500db6e36d4336069904944f2b93652618' },
-          { name: 'UNI', addr: '0xb33EaAd8d922B1083446DC23f610c2567fB5180f' },
-          { name: 'LINK', addr: '0x53e0bca35ec356bd5dddfebbd1fc0fd03fabad39' },
-          { name: 'QUICK', addr: '0xf28768daa238a2e52b21697284f1076f8a02c98d' },
-          { name: 'SOL', addr: '0x7df36098c4f923b7596ad881a70428f62c0199ba' },
-          { name: 'WMATIC', addr: '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270' }
-        ];
-
-        let portfolioValue = 0;
-        for (const addr of addressesToScan) {
-          for (const t of volatileTokens) {
-            try {
-              const bal = await blockchainService.getBalance(t.addr, addr).catch(() => '0');
-              if (Number(bal) > 0.000001) {
-                const price = await fetchCurrentPrice(t.name + 'USDT').catch(() => 0);
-                portfolioValue += Number(bal) * price;
-              }
-            } catch (e) { }
-          }
-        }
-
-        console.log("[BalanceDebug] Final Sync - USDT:", usdt, "OpUSDT:", opUsdt, "Other Stables:", totalOtherStablesInUsdt, "Volatile Assets:", portfolioValue);
-
-        // Total Capital = (Owner USDT + Operator USDT) + (Owner/Op Other Stables) + Volatile Portfolio
-        const totalCapital = Number(usdt) + Number(opUsdt) + totalOtherStablesInUsdt + portfolioValue;
-
-        setRealUsdtBalance(totalCapital.toFixed(2));
-        setRealPolBalance(Number(pol).toFixed(2));
-        setOperatorPolBalance(Number(opPol).toFixed(2));
-        setOperatorUsdtBalance(Number(opUsdt).toFixed(2));
-      } catch (err) {
-        console.error("[BalanceDebug] General Sync Error:", err);
-      } finally {
-        setIsSyncing(false);
-      }
-    }
-  };
-
+  // --- REMOTE BOT SYNC LOOP ---
   useEffect(() => {
-    if (mode === 'REAL') {
-      fetchRealBalances();
-      const interval = setInterval(fetchRealBalances, 30000); // 30s refresh
-      return () => clearInterval(interval);
-    }
-  }, [mode, manager.address]);
-
-  // Credentials State
-  const [privateKey, setPrivateKey] = useState(localStorage.getItem('fs_private_key') || '');
-  const [operatorAddress, setOperatorAddress] = useState(localStorage.getItem('fs_operator_address') || '');
-  const [rpcUrl, setRpcUrl] = useState(localStorage.getItem('fs_polygon_rpc') || '');
-  const [isConnectingMetaMask, setIsConnectingMetaMask] = useState(false);
-  const [isSettingUpOperator, setIsSettingUpOperator] = useState(false);
-  const [isGrantingAllowance, setIsGrantingAllowance] = useState(false);
-  const [demoBalance, setDemoBalance] = useState<number>(1000); // Demo starts with $1000
-  const [demoGasBalance, setDemoGasBalance] = useState<number>(20); // Demo starts with 20 POL
-  const [sniperLogs, setSniperLogs] = useState<SniperStep[]>([]);
-
-  // Estados Financeiros
-  const [dailyProfit, setDailyProfit] = useState(0);
-  const [dailyLoss, setDailyLoss] = useState(0);
-
-  // AI Analysis State
-  const [analysis, setAnalysis] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
-
-  // Estados de Formulário
-  const [liquidityAction, setLiquidityAction] = useState<'add' | 'remove'>('add');
-  const [isLiquidating, setIsLiquidating] = useState(false);
-  const [slippage, setSlippage] = useState<string>(localStorage.getItem('fs_slippage') || '0.5');
-  const [minProfit, setMinProfit] = useState<string>(localStorage.getItem('fs_min_profit') || '0.1');
-  const [consolidationThreshold, setConsolidationThreshold] = useState<string>(localStorage.getItem('fs_consolidation_threshold') || '10');
-
-  const emergencyLiquidate = async () => {
-    if (mode === 'DEMO') {
-      alert("Operação indisponível em modo DEMO.");
-      return;
-    }
-    if (!window.confirm("Deseja resgatar todos os ativos em HOLD e converter para USDT agora? Isse vai trazer seu capital de volta ao USDT.")) return;
-
-    setIsLiquidating(true);
-    try {
-      const tokensToSell = [
-        { name: 'WETH', addr: '0x7ceb23fd6bc0ad59f6c078095c510c28342245c4' },
-        { name: 'WBTC', addr: '0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6' },
-        { name: 'AAVE', addr: '0xd6df30500db6e36d4336069904944f2b93652618' },
-        { name: 'UNI', addr: '0xb33EaAd8d922B1083446DC23f610c2567fB5180f' },
-        { name: 'LINK', addr: '0x53e0bca35ec356bd5dddfebbd1fc0fd03fabad39' },
-        { name: 'QUICK', addr: '0xf28768daa238a2e52b21697284f1076f8a02c98d' },
-        { name: 'SOL', addr: '0x7df36098c4f923b7596ad881a70428f62c0199ba' },
-        { name: 'WMATIC', addr: '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270' },
-        { name: 'USDC (Native)', addr: '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359' },
-        { name: 'USDC (Bridged)', addr: '0x2791bca1f2de4661ed88a30c99a7a9449aa84174' },
-        { name: 'DAI', addr: '0x8f3cf7ad29050398801915a133026224328322ea' }
-      ];
-
-      const usdtAddr = '0xc2132d05d31c914a87c6611c10748aeb04b58e8f';
-      const opAddr = localStorage.getItem('fs_operator_address') || manager.address;
-      const ownerAddr = manager.address;
-
-      // Scanning both for liquidation
-      const scanAddrs = [ownerAddr];
-      if (opAddr !== ownerAddr) scanAddrs.push(opAddr);
-
-      for (const addr of scanAddrs) {
-        for (const t of tokensToSell) {
-          const bal = await blockchainService.getBalance(t.addr, addr).catch(() => '0');
-          if (Number(bal) > 0.0001) {
-            console.log(`[Liquidate] Selling ${bal} ${t.name} from ${addr} to USDT...`);
-            // Pass addr as fromAddress to ensure it uses the correct wallet (Owner or Operator)
-            await blockchainService.executeTrade(t.addr, usdtAddr, bal, true, addr).catch(e => {
-              console.error(`Failed to sell ${t.name} from ${addr}:`, e);
-            });
-          }
-        }
-      }
-
-      // Final: Move ALL stables from Operator to Master for consolidation
-      if (opAddr !== ownerAddr) {
-        const stablesToMove = [
-          { name: 'USDT', addr: usdtAddr },
-          { name: 'USDC Native', addr: '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359' },
-          { name: 'USDC Bridged', addr: '0x2791bca1f2de4661ed88a30c99a7a9449aa84174' },
-          { name: 'DAI', addr: '0x8f3cf7ad29050398801915a133026224328322ea' }
-        ];
-
-        for (const s of stablesToMove) {
-          const bal = await blockchainService.getBalance(s.addr, opAddr).catch(() => '0');
-          if (Number(bal) > 0.01) {
-            console.log(`[Consolidate] Moving ${bal} ${s.name} from Operator ${opAddr} to Master Wallet...`);
-            await blockchainService.transferTokens(s.addr, ownerAddr, bal, opAddr).catch(e => {
-              console.error(`Failed to consolidate ${s.name}:`, e);
-            });
-          }
-        }
-
-        // Also move POL (Native) - Leave tiny bit for gas, or move all if possible
-        const polBal = await blockchainService.getBalance('0x0000000000000000000000000000000000000000', opAddr).catch(() => '0');
-        if (Number(polBal) > 0.1) {
-          console.log(`[Consolidate] Moving remaining POL from Operator to Master...`);
-          const moveAmount = (Number(polBal) - 0.05).toFixed(4);
-          if (Number(moveAmount) > 0) {
-            await blockchainService.transferTokens('0x0000000000000000000000000000000000000000', ownerAddr, moveAmount, opAddr).catch(e => {
-              console.error("Failed to consolidate POL:", e);
-            });
-          }
-        }
-      }
-
-      alert("CONSOLIDAÇÃO CONCLUÍDA! Seu capital foi convertido para USDT e enviado para sua Carteira Master (Rabby). Se algum valor ainda não apareceu na Rabby, verifique se ele está em USDC ou DAI no seu endereço principal.");
-      fetchRealBalances();
-    } catch (err: any) {
-      alert("Erro na Liquidação: " + (err.message || "Desconhecido"));
-    } finally {
-      setIsLiquidating(false);
-    }
-  };
-  const [liquidityAmount, setLiquidityAmount] = useState('');
-  const [gasAmount, setGasAmount] = useState<string>('');
-  const [isRecharging, setIsRecharging] = useState(false);
-  const [customAllowance, setCustomAllowance] = useState(() => localStorage.getItem('fs_custom_allowance') || '100');
-  const [tradeAmount, setTradeAmount] = useState(() => localStorage.getItem('fs_trade_amount') || '3.0');
-  const [openAiKey, setOpenAiKey] = useState<string>(() => localStorage.getItem('flowsniper_openai_key') || '');
-
-  // Persistir Chave AI & Configs
-  useEffect(() => {
-    localStorage.setItem('flowsniper_openai_key', openAiKey);
-  }, [openAiKey]);
-
-  useEffect(() => {
-    localStorage.setItem('fs_custom_allowance', customAllowance);
-  }, [customAllowance]);
-
-  useEffect(() => {
-    localStorage.setItem('fs_trade_amount', tradeAmount);
-  }, [tradeAmount]);
-
-  const rechargeGas = async () => {
-    if (!gasAmount || Number(gasAmount) <= 0) return;
-
-    if (mode === 'DEMO') {
-      setDemoGasBalance(prev => prev + Number(gasAmount));
-      setGasAmount('');
-      alert(`RECARGA SIMULADA DE ${gasAmount} POL CONFIRMADA!`);
-    } else {
-      setIsRecharging(true);
-      try {
-        const txHash = await blockchainService.rechargeGas(gasAmount);
-        alert(`RECARGA INICIADA! TX: ${txHash}`);
-        setGasAmount('');
-        fetchRealBalances(); // Refresh balances
-      } catch (err: any) {
-        alert("Erro na Recarga: " + err.message);
-      } finally {
-        setIsRecharging(false);
-      }
-    }
-  };
-
-  const accountMenuRef = useRef<HTMLDivElement>(null);
-  const sniperRef = useRef<FlowSniperEngine | null>(null);
-
-  // Lógica de fechamento do menu ao clicar fora
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (accountMenuRef.current && !accountMenuRef.current.contains(event.target as Node)) {
-        setIsAccountMenuOpen(false);
+    const syncBot = async () => {
+      const status = await botApi.getStatus();
+      if (status) {
+        setIsRemoteConnected(true);
+        setBotActive(status.running);
+        setMode(status.mode); // Sync mode from server
+        setRemoteStatus(status.lastStatus || "Idle");
+        // If server has profit info, we could sync it too, but local aggregation is complex.
+        // For now let's trust the server's mode.
+      } else {
+        setIsRemoteConnected(false);
+        setRemoteStatus("Offline (Start PM2 Bot)");
       }
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+
+    syncBot();
+    const interval = setInterval(syncBot, 2000); // Poll every 2s
+    return () => clearInterval(interval);
   }, []);
 
-  // --- LOGIC MERGE: Real Engine Initialization ---
-  useEffect(() => {
-    sniperRef.current = new FlowSniperEngine(
-      (newStep: FlowStep) => {
-        // High Speed Filtering: We keep only real successes OR status pulses
-        const mappedStep: SniperStep = {
-          id: newStep.id,
-          timestamp: newStep.timestamp,
-          path: newStep.pair.includes('/') ? newStep.pair.split('/') : [newStep.pair],
-          profit: newStep.profit,
-          status: newStep.status === 'SUCCESS' ? (newStep.type === 'SCAN_PULSE' ? 'EXPIRED' : 'SUCCESS') : 'EXPIRED',
-          hash: newStep.hash
-        };
-
-        setSniperLogs(prev => {
-          // Pulse Logic: Ensure the user sees the bot heartbeat
-          if (newStep.type === 'SCAN_PULSE') {
-            // Keep the last pulse visible, remove older pulses to avoid clutter
-            const withoutOldPulses = prev.filter(l => l.status !== 'EXPIRED' && !l.path.join('').includes('Scanning'));
-            return [mappedStep, ...withoutOldPulses].slice(0, 15);
-          }
-          // Real successful trades are always added at the top
-          return [mappedStep, ...prev].slice(0, 50);
-        });
-
-        if (newStep.profit > 0) {
-          setDailyProfit(prev => prev + newStep.profit);
-        } else if (newStep.profit < 0) {
-          setDailyLoss(prev => prev + Math.abs(newStep.profit));
-        }
-      },
-      (newGas: number) => {
-        if (mode === 'DEMO') setDemoGasBalance(newGas);
-      },
-      (newBal: number) => {
-        if (mode === 'DEMO') setDemoBalance(newBal);
-      }
-    );
-
-    return () => {
-      if (sniperRef.current) sniperRef.current.stop();
-    };
-  }, [mode]);
-
-  // Persist Mode
-  useEffect(() => {
-    localStorage.setItem('fs_mode', mode);
-  }, [mode]);
-
-  // Persist Strategy Settings
-  useEffect(() => {
-    localStorage.setItem('fs_slippage', slippage || '0.5');
-    localStorage.setItem('fs_min_profit', minProfit || '0.1');
-    localStorage.setItem('fs_consolidation_threshold', consolidationThreshold || '10');
-  }, [slippage, minProfit, consolidationThreshold]);
-
-  // --- LOGIC MERGE: Start/Stop Engine ---
-  useEffect(() => {
-    if (botActive && sniperRef.current) {
-      sniperRef.current.start(
-        mode,
-        demoGasBalance,
-        demoBalance,
-        analysis,
-        tradeAmount,
-        Number(slippage) / 100,
-        Number(minProfit) / 100,
-        Number(consolidationThreshold)
-      );
-    } else if (sniperRef.current) {
-      sniperRef.current.stop();
+  const toggleBot = async () => {
+    if (!isRemoteConnected) {
+      alert("Erro: O Robô 24h (PM2) parece estar desligado. Inicie ele primeiro com o arquivo INICIAR_ROBO_24H.bat");
+      return;
     }
-  }, [botActive, mode, demoGasBalance, demoBalance, analysis, slippage, minProfit, tradeAmount, consolidationThreshold]);
+
+    if (botActive) {
+      await botApi.stop();
+      setBotActive(false); // Optimistic update
+    } else {
+      await botApi.start();
+      setBotActive(true); // Optimistic update
+    }
+  };
+
+  const changeMode = async (newMode: 'REAL' | 'DEMO') => {
+    setMode(newMode);
+    if (isRemoteConnected) {
+      await botApi.updateConfig({ mode: newMode });
+    }
+  };
+
+  // AUTO-SYNC SETTINGS TO BACKEND
+  useEffect(() => {
+    if (!isRemoteConnected) return;
+    const timer = setTimeout(() => {
+      botApi.updateConfig({
+        slippage: parseFloat(slippage),
+        minProfit: parseFloat(minProfit),
+        consolidationThreshold: parseFloat(consolidationThreshold),
+        tradeAmount: tradeAmount,
+        openaiKey: openAiKey
+      });
+      console.log("Synced settings to Remote Bot");
+    }, 1000); // Debounce 1s
+    return () => clearTimeout(timer);
+  }, [slippage, minProfit, consolidationThreshold, tradeAmount, openAiKey, isRemoteConnected]);
+
+
+  // Liquidity & Gas State
+  const [liquidityAction, setLiquidityAction] = useState<'ADD' | 'REMOVE'>('ADD');
+  const [liquidityAmount, setLiquidityAmount] = useState('');
+  const [gasAmount, setGasAmount] = useState('');
+  const [isRecharging, setIsRecharging] = useState(false);
+  const [isLiquidating, setIsLiquidating] = useState(false);
 
   // Auto-Derive Address from Private Key
   useEffect(() => {
     if (privateKey && privateKey.length > 60) {
       try {
-        // Creating a temp wallet to get address
-        // specific import needed or use ethers from window if available, 
-        // but we can imply usage of blockchainService or simple check
-        // For now, let's just update the UI state if we assume valid key
-        // OR better: use ethers library if imported.
-
-        // Since we don't want to add heavy imports to App.tsx if not needed,
-        // let's rely on blockchainService to validate/get address? 
-        // Or just import Wallet from ethers.
-        // Let's check imports. logic merge:
+        const w = new EthersWallet(privateKey);
+        if (w.address !== manager.address) {
+          setManager(prev => ({ ...prev, address: w.address }));
+        }
       } catch (e) { }
     }
   }, [privateKey]);
 
+  // Gas Recharge (Remote via API)
+  const rechargeGas = async () => {
+    if (!gasAmount || isNaN(Number(gasAmount))) return alert("Valor inválido");
+    setIsRecharging(true);
+    try {
+      if (isRemoteConnected) {
+        const res = await botApi.recharge(gasAmount);
+        if (res.success) alert(`Recarga Iniciada via Robô! Tx: ${res.txHash}`);
+        else throw new Error(res.error);
+      } else {
+        // Fallback local
+        const pvt = localStorage.getItem('fs_private_key');
+        if (pvt) blockchainService.setActiveKey(pvt);
+        const tx = await blockchainService.rechargeGas(gasAmount);
+        alert(`Recarga (Local) enviada! Hash: ${tx}`);
+      }
+      fetchRealBalances();
+    } catch (e: any) {
+      alert("Erro na recarga: " + e.message);
+    } finally {
+      setIsRecharging(false);
+    }
+  };
+
+  const emergencyLiquidate = async () => {
+    if (!confirm("TEM CERTEZA? Isso venderá todos os ativos por USDT.")) return;
+    setIsLiquidating(true);
+    try {
+      if (isRemoteConnected) {
+        const res = await botApi.liquidate();
+        if (res.success) alert("Liquidação de Emergência Solicitada ao Robô!");
+        else throw new Error(res.error);
+      } else {
+        const pvt = localStorage.getItem('fs_private_key');
+        if (pvt) blockchainService.setActiveKey(pvt);
+        await blockchainService.emergencyLiquidate(manager.address);
+        alert("Liquidação (Local) concluída!");
+      }
+      fetchRealBalances();
+    } catch (e: any) {
+      alert("Erro na liquidação: " + e.message);
+    } finally {
+      setIsLiquidating(false);
+    }
+  };
+
   // Actually, let's do this directly in the saveCredentials or just import Wallet.
   // Re-writing simple effect:
 
-  // Save Credentials
-  const saveCredentials = () => {
+  // Save Credentials & Sync with Backend
+  const saveCredentials = async () => {
     setPvtKeyError(null);
     if (!privateKey) return;
 
-    // Validation: Check if user pasted an address (Starts with 0x and has 42 chars)
     if (privateKey.length === 42 && privateKey.startsWith('0x')) {
-      setPvtKeyError("Erro: Você colou o ENDEREÇO da carteira. Para snipar, o robô precisa da CHAVE PRIVADA (Private Key) para assinar transações!");
+      setPvtKeyError("Erro: Cole a CHAVE PRIVADA (Private Key), não o endereço.");
       return;
     }
 
-    if (privateKey) {
-      try {
-        const w = new EthersWallet(privateKey);
-        localStorage.setItem('fs_private_key', privateKey);
-        setManager(prev => ({ ...prev, address: w.address }));
-        console.log("Derived address from PK:", w.address);
-      } catch (e) {
-        console.error("Failed to derive address from PK", e);
-        setPvtKeyError("Chave Privada Inválida. Verifique se copiou corretamente da MetaMask (Exportar Chave Privada).");
-        return;
+    try {
+      const w = new EthersWallet(privateKey);
+      localStorage.setItem('fs_private_key', privateKey);
+      setManager(prev => ({ ...prev, address: w.address })); // Update UI locally
+
+      // SYNC WITH BACKEND
+      if (isRemoteConnected) {
+        await botApi.updateConfig({
+          privateKey: privateKey,
+          rpcUrl: rpcUrl || undefined
+        });
+        alert('Credenciais Salvas e Sincronizadas com o Robô 24h!');
+      } else {
+        alert('Credenciais Salvas Localmente! (Robô 24h parece offline)');
       }
+
+    } catch (e) {
+      setPvtKeyError("Chave Privada Inválida.");
+      return;
     }
+
     if (rpcUrl) localStorage.setItem('fs_polygon_rpc', rpcUrl);
-
-    // Clear balances to force refresh
-    setRealUsdtBalance('0.00');
-    setRealPolBalance('0.00');
-
-    alert('Credenciais Salvas! Sincronizando com a Blockchain...');
+    setRealUsdtBalance('0.00'); // Force refresh
     fetchRealBalances();
+  };
+
+  const withdrawToMaster = async () => {
+    const addr = manager.address;
+    if (!addr || addr === mockManager.address) return alert("Configure sua carteira primeiro.");
+
+    const amount = prompt("Quanto deseja sacar (USDT)?");
+    if (!amount) return;
+
+    const confirm = window.confirm(`Sacar ${amount} USDT do Robô para ${addr}?`);
+    if (confirm) {
+      const usdtAddr = '0xc2132d05d31c914a87c6611c10748aeb04b58e8f';
+      const res = await botApi.withdraw(addr, amount, usdtAddr);
+      if (res.success) alert(`Saque Realizado! Tx: ${res.txHash}`);
+      else alert(`Erro no Saque: ${res.error}`);
+    }
   };
 
   const connectWallet = async () => {
@@ -801,13 +651,13 @@ const App: React.FC = () => {
 
                     <div className="flex gap-2 mt-4">
                       <button
-                        onClick={() => { setBotActive(false); setMode('DEMO'); }}
+                        onClick={() => changeMode('DEMO')}
                         className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${mode === 'DEMO' ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-transparent text-zinc-600 border-zinc-800 hover:border-zinc-600'}`}
                       >
                         Demo
                       </button>
                       <button
-                        onClick={() => { setBotActive(false); setMode('REAL'); }}
+                        onClick={() => changeMode('REAL')}
                         className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${mode === 'REAL' ? 'bg-rose-600 text-white border-rose-600 shadow-[0_0_20px_rgba(225,29,72,0.4)]' : 'bg-transparent text-zinc-600 border-zinc-800 hover:border-zinc-600'}`}
                       >
                         Live Real
@@ -816,11 +666,22 @@ const App: React.FC = () => {
                   </div>
                 </div>
                 <button
-                  onClick={() => setBotActive(!botActive)}
+                  onClick={toggleBot}
                   className={`px-16 py-6 rounded-[2rem] font-black italic text-lg flex items-center gap-5 transition-all duration-500 active:scale-90 relative z-10 overflow-hidden ${botActive ? 'bg-rose-500/10 text-rose-500 border border-rose-500/30' : 'bg-[#f01a74] text-white shadow-2xl shadow-[#f01a74]/30 hover:bg-[#d01664] hover:scale-105'}`}
                 >
                   {botActive ? <><Square size={24} fill="currentColor" /> PARAR MOTOR</> : <><Play size={24} fill="currentColor" /> INICIAR MOTOR</>}
                 </button>
+              </div>
+
+              {/* STATUS INDICATOR (NEW) */}
+              <div className={`mt-4 p-4 rounded-xl border flex items-center justify-between ${isRemoteConnected ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-zinc-800/50 border-zinc-700'}`}>
+                <div className="flex items-center gap-3">
+                  <div className={`w-3 h-3 rounded-full ${isRemoteConnected ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-500'}`}></div>
+                  <span className="font-bold text-xs uppercase tracking-widest text-zinc-400">
+                    {isRemoteConnected ? 'Remote Bot Connected' : 'Remote Bot Offline'}
+                  </span>
+                </div>
+                <span className="font-mono text-xs text-zinc-500">{remoteStatus}</span>
               </div>
 
               {/* MÓDULO DE MONITORAMENTO FINANCEIRO (O QUE VOCÊ PEDIU) */}

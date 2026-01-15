@@ -1,3 +1,4 @@
+import { proxyManager } from './proxy_utils.js';
 
 export interface CandleData {
     time: number;
@@ -8,13 +9,19 @@ export interface CandleData {
     volume: number;
 }
 
-const BYBIT_V5_URL = '/bybit-api/v5/market';
+const BYBIT_V5_BASE = 'https://api.bybit.com';
+const BYBIT_API_PATH = '/v5/market';
+const BINANCE_BASE = 'https://api.binance.com';
+
+const isNode = typeof process !== 'undefined' && process.release && process.release.name === 'node';
 
 export const fetchHistoricalData = async (symbol: string = 'POLUSDT', interval: string = '1', limit: number = 50): Promise<CandleData[]> => {
     try {
-        const url = `${BYBIT_V5_URL}/kline?category=linear&symbol=${symbol}&interval=${interval}&limit=${limit}`;
+        const path = `${BYBIT_API_PATH}/kline?category=linear&symbol=${symbol}&interval=${interval}&limit=${limit}`;
+        const url = isNode ? `${BYBIT_V5_BASE}${path}` : `/bybit-api${path}`;
+
         console.log("Fetching Historical Data from:", url);
-        const response = await fetch(url);
+        const response = await proxyManager.proxyFetch(url);
         const data = await response.json();
 
         if (data.retCode === 0 && data.result && data.result.list && data.result.list.length > 0) {
@@ -31,13 +38,12 @@ export const fetchHistoricalData = async (symbol: string = 'POLUSDT', interval: 
     } catch (error) {
         console.warn("Bybit Fetch failed, trying Binance fallback...", error);
         try {
-            // Binance Fallback (Public API usually has better CORS/Availability)
-            // Binance uses 1m, 5m, etc. instead of 1.
             const binanceInterval = interval === '1' ? '1m' : (interval + 'm');
-            // Binance symbol for MATIC/POL is POLUSDT
             const binanceSymbol = symbol;
-            const binanceUrl = `https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=${binanceInterval}&limit=${limit}`;
-            const bResp = await fetch(binanceUrl);
+            const path = `/api/v3/klines?symbol=${binanceSymbol}&interval=${binanceInterval}&limit=${limit}`;
+            const binanceUrl = isNode ? `${BINANCE_BASE}${path}` : `/binance-api${path}`;
+
+            const bResp = await proxyManager.proxyFetch(binanceUrl);
             const bData = await bResp.json();
 
             return bData.map((item: any) => ({
@@ -56,10 +62,7 @@ export const fetchHistoricalData = async (symbol: string = 'POLUSDT', interval: 
 };
 
 export const fetchCurrentPrice = async (symbol: string = 'POLUSDT'): Promise<number> => {
-    // Normalize symbols for Binance (WMATIC -> MATIC)
     const normalizedSymbol = symbol.replace('WMATIC', 'MATIC').replace('POL', 'MATIC');
-
-    // List of symbol variations to try (e.g., POLUSDT, MATICUSDT)
     const candidates = [normalizedSymbol];
     if (symbol !== normalizedSymbol) candidates.push(symbol);
     if (symbol.includes('POL') && !candidates.includes('MATICUSDT')) candidates.push(symbol.replace('POL', 'MATIC'));
@@ -68,26 +71,29 @@ export const fetchCurrentPrice = async (symbol: string = 'POLUSDT'): Promise<num
     // 1. Try Bybit
     for (const s of candidates) {
         try {
-            const response = await fetch(`${BYBIT_V5_URL}/tickers?category=linear&symbol=${s}`);
+            const path = `${BYBIT_API_PATH}/tickers?category=linear&symbol=${s}`;
+            const url = isNode ? `${BYBIT_V5_BASE}${path}` : `/bybit-api${path}`;
+            const response = await proxyManager.proxyFetch(url);
             const data = await response.json();
             if (data.retCode === 0 && data.result?.list?.length > 0) {
                 return parseFloat(data.result.list[0].lastPrice);
             }
-        } catch (e) { /* continued */ }
+        } catch (e) { }
     }
 
     // 2. Try Binance
     for (const s of candidates) {
         try {
-            const response = await fetch(`/binance-api/api/v3/ticker/price?symbol=${s}`);
+            const path = `/api/v3/ticker/price?symbol=${s}`;
+            const url = isNode ? `${BINANCE_BASE}${path}` : `/binance-api${path}`;
+            const response = await proxyManager.proxyFetch(url);
             const data = await response.json();
             if (data.price) return parseFloat(data.price);
-        } catch (e) { /* continued */ }
+        } catch (e) { }
     }
 
     console.warn(`[MarketData] Exchanges failed for ${symbol}, trying CoinGecko...`);
     try {
-        // CoinGecko fallback (no CORS issues)
         const coinGeckoMap: { [key: string]: string } = {
             'POLUSDT': 'matic-network',
             'MATICUSDT': 'matic-network',
@@ -109,7 +115,7 @@ export const fetchCurrentPrice = async (symbol: string = 'POLUSDT'): Promise<num
         }
 
         const cgUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd`;
-        const cgResp = await fetch(cgUrl);
+        const cgResp = await proxyManager.proxyFetch(cgUrl);
         const cgData = await cgResp.json();
         return cgData[coinId]?.usd || 0;
     } catch (cgError) {

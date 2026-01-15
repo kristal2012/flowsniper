@@ -44,13 +44,37 @@ const FALLBACK_RPCS = [
 ];
 
 export class BlockchainService {
-    private getRPC(): string {
-        return localStorage.getItem('fs_polygon_rpc') || import.meta.env.VITE_POLYGON_RPC_URL || DEFAULT_RPC;
-    }
-
     public lastError: string | null = null;
     private browserProvider: BrowserProvider | null = null;
     private operatorWallet: Wallet | null = null;
+
+    // Dynamic Configuration (Injected by Headless Bot)
+    private activeKey: string | null = null;
+    private activeRpc: string | null = null;
+
+    private getRPC(): string {
+        if (this.activeRpc) return this.activeRpc;
+
+        let storedRpc = '';
+        if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+            storedRpc = localStorage.getItem('fs_polygon_rpc') || '';
+        }
+        return storedRpc || process.env.VITE_POLYGON_RPC_URL || DEFAULT_RPC;
+    }
+
+    public setRpcUrl(url: string) {
+        if (url && url.startsWith('http')) {
+            this.activeRpc = url;
+            console.log("[BlockchainService] Active RPC updated dynamically.");
+        }
+    }
+
+    public setActiveKey(key: string) {
+        if (key && key.length === 66) { // 0x + 64 chars
+            this.activeKey = key;
+            console.log("[BlockchainService] Active Key injected dynamically.");
+        }
+    }
 
     constructor() {
         if (typeof window !== 'undefined' && ((window as any).ethereum || (window as any).rabby)) {
@@ -62,12 +86,14 @@ export class BlockchainService {
     }
 
     private loadOperatorWallet() {
-        const storedKey = localStorage.getItem('fs_operator_key');
-        if (storedKey) {
-            try {
-                this.operatorWallet = new Wallet(storedKey, this.getProvider());
-            } catch (e) {
-                console.error("Failed to load operator wallet", e);
+        if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+            const storedKey = localStorage.getItem('fs_operator_key');
+            if (storedKey) {
+                try {
+                    this.operatorWallet = new Wallet(storedKey, this.getProvider());
+                } catch (e) {
+                    console.error("Failed to load operator wallet", e);
+                }
             }
         }
     }
@@ -117,7 +143,9 @@ export class BlockchainService {
         // Generate or load operator wallet
         if (!this.operatorWallet) {
             const newWallet = Wallet.createRandom();
-            localStorage.setItem('fs_operator_key', newWallet.privateKey);
+            if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+                localStorage.setItem('fs_operator_key', newWallet.privateKey);
+            }
             this.operatorWallet = new Wallet(newWallet.privateKey, this.getProvider());
         }
 
@@ -226,25 +254,44 @@ export class BlockchainService {
         return wallet ? wallet.address : null;
     }
 
-    private getWallet(preferredAddress?: string): Wallet | null {
+    public getWallet(preferredAddress?: string): Wallet | null {
         // 1. Check if we have a preferred address
         if (preferredAddress) {
             if (this.operatorWallet && this.operatorWallet.address.toLowerCase() === preferredAddress.toLowerCase()) {
                 return this.operatorWallet.connect(this.getProvider());
             }
-            const pvtKey = localStorage.getItem('fs_private_key');
-            if (pvtKey) {
-                const master = new Wallet(pvtKey, this.getProvider());
+
+            // Check Injected Key first for preferred
+            if (this.activeKey) {
+                const master = new Wallet(this.activeKey, this.getProvider());
                 if (master.address.toLowerCase() === preferredAddress.toLowerCase()) return master;
+            }
+
+            if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+                const pvtKey = localStorage.getItem('fs_private_key');
+                if (pvtKey) {
+                    const master = new Wallet(pvtKey, this.getProvider());
+                    if (master.address.toLowerCase() === preferredAddress.toLowerCase()) return master;
+                }
             }
         }
 
-        // 2. Default Priority: Operator -> Master
+        // 2. Default Priority: Injected Key -> Operator -> Env/Local
+        if (this.activeKey) {
+            try {
+                return new Wallet(this.activeKey, this.getProvider());
+            } catch (e) {
+                console.error("Invalid Injected Key", e);
+            }
+        }
+
         if (this.operatorWallet) {
             return this.operatorWallet.connect(this.getProvider());
         }
 
-        const pvtKey = localStorage.getItem('fs_private_key') || import.meta.env.VITE_PRIVATE_KEY;
+        const pvtKey = (typeof window !== 'undefined' && typeof localStorage !== 'undefined') ?
+            localStorage.getItem('fs_private_key') :
+            process.env.VITE_PRIVATE_KEY;
         if (pvtKey) {
             try {
                 return new Wallet(pvtKey, this.getProvider());
@@ -288,7 +335,10 @@ export class BlockchainService {
             const amountOutMinWei = ethers.parseUnits(amountOutMin, decimalsOut);
 
             // 0. Pull funds from Owner to Operator if needed
-            const ownerAddress = localStorage.getItem('fs_owner_address');
+            let ownerAddress: string | null = null;
+            if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+                ownerAddress = localStorage.getItem('fs_owner_address');
+            }
             if (this.operatorWallet && wallet.address === this.operatorWallet.address && ownerAddress) {
                 const tokenContract = new Contract(tokenIn, ERC20_ABI, wallet);
                 const opBalance = await tokenContract.balanceOf(wallet.address);
@@ -550,6 +600,33 @@ export class BlockchainService {
             console.error("[BlockchainService] Balance Error:", this.lastError);
             throw error;
         }
+    }
+
+    // CORE MODULE: Emergency Liquidation
+    async emergencyLiquidate(targetAddress: string): Promise<void> {
+        console.log(`[Emergency] LIQUIDATING ALL ASSETS FOR: ${targetAddress}`);
+
+        const ASSETS_TO_DUMP = [
+            '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619', // WETH
+            '0x1BFD67037B42Cf73acf2047067bd4F2C47D9BfD6', // WBTC
+            '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270'  // WMATIC (Wrapped)
+        ];
+
+        const USDT = '0xc2132d05d31c914a87c6611c10748aeb04b58e8f';
+
+        for (const token of ASSETS_TO_DUMP) {
+            try {
+                const balance = await this.getBalance(token, targetAddress);
+                if (parseFloat(balance) > 0.0001) { // Dust threshold
+                    console.log(`[Emergency] Dumping ${balance} of ${token} to USDT...`);
+                    await this.executeTrade(token, USDT, balance, true, targetAddress, "0", false);
+                }
+            } catch (e: any) {
+                console.error(`[Emergency] Failed to dump ${token}:`, e.message);
+            }
+        }
+
+        console.log("[Emergency] Liquidation Complete.");
     }
 }
 
