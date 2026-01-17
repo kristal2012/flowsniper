@@ -209,20 +209,17 @@ export class BlockchainService {
             const provider = this.getProvider();
             const router = new Contract(ROUTER_ADDRESS, ROUTER_ABI, provider);
 
-            // Detect decimals for the first token in path
             const decimals = await this.getTokenDecimals(path[0]);
             const amountWei = ethers.parseUnits(amountIn, decimals);
 
             const amounts = await router.getAmountsOut(amountWei, path);
-            console.log(`[getAmountsOut] ${amountIn} ${path[0]} -> ${amounts.length > 1 ? ethers.formatUnits(amounts[1], await this.getTokenDecimals(path[1])) : '0'} ${path[1]}`);
             return amounts;
         } catch (e: any) {
-            console.error(`[BlockchainService] getAmountsOut Error for path ${path.join('->')}:`, e.message || e);
+            console.error(`[BlockchainService] getAmountsOut Falhou (${path[0]}->${path[1]}):`, e.message);
             return [];
         }
     }
 
-    // NEW: Uniswap V3 Quoter (Multi-Tier)
     public async getQuoteV3(tokenIn: string, tokenOut: string, amountIn: string): Promise<string> {
         try {
             const provider = this.getProvider();
@@ -232,38 +229,22 @@ export class BlockchainService {
             const decimalsOut = await this.getTokenDecimals(tokenOut);
             const amountWei = ethers.parseUnits(amountIn, decimalsIn);
 
-            const tiers = [500, 3000, 10000]; // 0.05%, 0.3%, 1%
+            const tiers = [500, 3000, 10000];
             let bestQuoteWei = BigInt(0);
-            let bestFee = 3000;
 
-            // Parallel scan of all tiers for speed
             const quotes = await Promise.all(tiers.map(async (fee) => {
                 try {
-                    return await quoter.quoteExactInputSingle.staticCall(
-                        tokenIn,
-                        tokenOut,
-                        fee,
-                        amountWei,
-                        0
-                    );
-                } catch (e) {
+                    return await quoter.quoteExactInputSingle.staticCall(tokenIn, tokenOut, fee, amountWei, 0);
+                } catch (e: any) {
+                    console.warn(`[BlockchainService] Falha quote V3 tier ${fee}:`, e.message.substring(0, 100));
                     return BigInt(0);
                 }
             }));
 
-            // Find best
-            quotes.forEach((q, index) => {
-                if (q > bestQuoteWei) {
-                    bestQuoteWei = q;
-                    bestFee = tiers[index];
-                }
-            });
-
-            const formatted = ethers.formatUnits(bestQuoteWei, decimalsOut);
-            console.log(`[getQuoteV3] Best Quote: ${amountIn} -> ${formatted} (Fee: ${bestFee})`);
-            return formatted; // Ideally we should return fee too, but for now we optimize for price
+            quotes.forEach((q) => { if (q > bestQuoteWei) bestQuoteWei = q; });
+            return ethers.formatUnits(bestQuoteWei, decimalsOut);
         } catch (e: any) {
-            console.error("[getQuoteV3] Failed", e);
+            console.error("[BlockchainService] getQuoteV3 Falhou:", e.message);
             return "0";
         }
     }

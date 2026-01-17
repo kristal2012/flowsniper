@@ -8,15 +8,17 @@ export interface ProxyConfig {
 
 class ProxyManager {
     private agent: any = null;
+    private primaryUrl: string = '';
+    private currentUrl: string = '';
     private freeProxyList: string[] = [];
     private currentProxyIndex: number = -1;
     private isInitializing: boolean = false;
+    private lastPrimaryAttempt: number = 0;
 
     constructor() {
-        // We delay agent initialization if we don't have the URL yet
-        const url = this.getEnvUrl();
-        if (this.isEnabled() && url && !url.includes('sua_url_aqui')) {
-            this.initializeAgent(url);
+        this.primaryUrl = this.getEnvUrl();
+        if (this.isEnabled() && this.primaryUrl && !this.primaryUrl.includes('sua_url_aqui')) {
+            this.initializeAgent(this.primaryUrl);
         }
     }
 
@@ -26,10 +28,12 @@ class ProxyManager {
     }
 
     private async initializeAgent(url: string) {
-        if (typeof window !== 'undefined') return; // Do not initialize agents in browser
+        if (typeof window !== 'undefined') return;
 
         try {
-            console.log(`[Proxy] Initializing with: ${url.replace(/:([^:@]+)@/, ':****@')}`);
+            const masked = url.replace(/:([^:@]+)@/, ':****@');
+            console.log(`[Proxy] Configurando agente para: ${masked}`);
+
             if (url.startsWith('socks')) {
                 const { SocksProxyAgent } = await import('socks-proxy-agent');
                 this.agent = new SocksProxyAgent(url);
@@ -37,8 +41,9 @@ class ProxyManager {
                 const { HttpsProxyAgent } = await import('https-proxy-agent');
                 this.agent = new HttpsProxyAgent(url);
             }
+            this.currentUrl = url;
         } catch (e) {
-            console.error("[Proxy] Failed to initialize agent for URL:", url, e);
+            console.error("[Proxy] Falha ao inicializar agente para URL:", url, e);
             this.agent = null;
         }
     }
@@ -47,7 +52,7 @@ class ProxyManager {
         if (this.isInitializing) return;
         this.isInitializing = true;
 
-        console.log("[Proxy] Fetching fresh free SOCKS5 proxy list...");
+        console.log("[Proxy] Buscando lista de proxies SOCKS5 gratuitos...");
         try {
             const response = await fetch('https://api.proxyscrape.com/v2/?request=displayproxies&protocol=socks5&timeout=10000&country=all&ssl=all&anonymity=all');
             if (response.ok) {
@@ -55,13 +60,13 @@ class ProxyManager {
                 const proxies = text.split('\n').map(p => p.trim()).filter(p => p.length > 0);
                 if (proxies.length > 0) {
                     this.freeProxyList = proxies.map(p => `socks5://${p}`);
-                    console.log(`[Proxy] Loaded ${this.freeProxyList.length} free proxies.`);
+                    console.log(`[Proxy] ${this.freeProxyList.length} proxies gratuitos carregados.`);
                     this.currentProxyIndex = 0;
                     return;
                 }
             }
         } catch (e) {
-            console.error("[Proxy] Error fetching from ProxyScrape:", e);
+            console.error("[Proxy] Erro ao buscar proxies do ProxyScrape:", e);
         } finally {
             this.isInitializing = false;
         }
@@ -69,6 +74,15 @@ class ProxyManager {
 
     async rotateProxy(): Promise<boolean> {
         if (typeof window !== 'undefined') return false;
+
+        // Try to go back to primary if some time has passed
+        const now = Date.now();
+        if (this.currentUrl !== this.primaryUrl && (now - this.lastPrimaryAttempt > 5 * 60 * 1000)) {
+            console.log("[Proxy] Tentando retornar ao proxy principal...");
+            this.lastPrimaryAttempt = now;
+            await this.initializeAgent(this.primaryUrl);
+            return true;
+        }
 
         if (this.freeProxyList.length === 0 || this.currentProxyIndex >= this.freeProxyList.length - 1) {
             await this.fetchFreeProxies();
@@ -78,10 +92,18 @@ class ProxyManager {
 
         if (this.freeProxyList.length > 0 && this.currentProxyIndex < this.freeProxyList.length) {
             const nextUrl = this.freeProxyList[this.currentProxyIndex];
-            console.log(`[Proxy] Rotating to new candidate: ${nextUrl}`);
+            console.log(`[Proxy] Rotacionando para candidato gratuito: ${nextUrl}`);
             await this.initializeAgent(nextUrl);
             return true;
         }
+
+        // If even free rotation fails, try primary again as last resort
+        if (this.primaryUrl && this.currentUrl !== this.primaryUrl) {
+            console.log("[Proxy] Resetando para proxy principal como último recurso.");
+            await this.initializeAgent(this.primaryUrl);
+            return true;
+        }
+
         return false;
     }
 
