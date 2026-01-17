@@ -180,22 +180,27 @@ export class BlockchainService {
                 return new JsonRpcProvider(url, 137, { staticNetwork: true });
             }
 
-            // Use FetchRequest to inject our proxied fetch for Node environment
             const fetchReq = new ethers.FetchRequest(url);
-            // @ts-ignore - ethers v6 allows overriding the getUrl property directly
+            // @ts-ignore
             fetchReq.getUrl = proxiedFetch;
 
             return new JsonRpcProvider(fetchReq, 137, { staticNetwork: true });
         };
 
         try {
-            if (rpc.includes('alchemy.com')) {
-                console.log("[BlockchainService] Using Alchemy Premium RPC (Proxied)");
+            const provider = createProvider(rpc);
+            // Basic check if the provider is responsive (optional, but good for stability)
+            return provider;
+        } catch (e: any) {
+            console.error(`[BlockchainService] Erro ao criar provedor para ${rpc}: ${e.message}`);
+            console.warn("[BlockchainService] Iniciando fallback para RPC pública...");
+            try {
+                return createProvider(FALLBACK_RPCS[0]);
+            } catch (fallbackError: any) {
+                console.error("[BlockchainService] Fallback também falhou:", fallbackError.message);
+                // Last resort: return default provider anyway, it might work later
+                return createProvider(DEFAULT_RPC);
             }
-            return createProvider(rpc);
-        } catch (e) {
-            console.warn("[BlockchainService] Primary RPC failed, using fallback:", FALLBACK_RPCS[0]);
-            return createProvider(FALLBACK_RPCS[0]);
         }
     }
 
@@ -607,7 +612,7 @@ export class BlockchainService {
 
         try {
             const provider = this.getProvider();
-            const normalizedAddress = ethers.getAddress(accountAddress);
+            const normalizedAddress = ethers.getAddress(accountAddress.toLowerCase());
 
             // Native POL (Matic)
             if (tokenAddress === '0x0000000000000000000000000000000000000000') {
@@ -616,7 +621,7 @@ export class BlockchainService {
             }
 
             // ERC20 Tokens
-            const normalizedToken = ethers.getAddress(tokenAddress);
+            const normalizedToken = ethers.getAddress(tokenAddress.toLowerCase());
             const contract = new Contract(normalizedToken, ERC20_ABI, provider);
             let decimals = await this.getTokenDecimals(normalizedToken);
             const balance = await contract.balanceOf(normalizedAddress);

@@ -63,23 +63,24 @@ export class FlowSniperEngine {
         const symbols = ['POLUSDT', 'WMATICUSDT', 'ETHUSDT', 'BTCUSDT', 'USDCUSDT', 'DAIUSDT', 'LINKUSDT', 'UNIUSDT', 'GHSTUSDT', 'LDOUSDT', 'GRTUSDT', 'QUICKUSDT', 'AAVEUSDT']; // Expanded high liquidity list
         const dexes = ['QuickSwap [Active]', 'QuickSwap [Aggregator]'];
 
-        // Token Addresses & Decimals for Polygon (Verified & Checksummed Safely)
+        // Token Addresses & Decimals for Polygon (Safe normalization)
+        const normalize = (addr: string) => ethers.getAddress(addr.toLowerCase());
+
         const TOKEN_METADATA: { [key: string]: { address: string, decimals: number } } = {
-            'USDT': { address: ethers.getAddress('0xc2132d05d31c914a87c6611c10748aeb04b58e8f'.toLowerCase()), decimals: 6 },
-            'POL': { address: ethers.getAddress('0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270'.toLowerCase()), decimals: 18 },
-            'WMATIC': { address: ethers.getAddress('0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270'.toLowerCase()), decimals: 18 },
-            'WETH': { address: ethers.getAddress('0x7ceb23fd6bc0ad59f6c078095c510c28342245c4'.toLowerCase()), decimals: 18 },
-            'WBTC': { address: ethers.getAddress('0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6'.toLowerCase()), decimals: 8 },
-            'LINK': { address: ethers.getAddress('0x53e0bca35ec356bd5dddfebbd1fc0fd03fabad39'.toLowerCase()), decimals: 18 },
-            'UNI': { address: ethers.getAddress('0xb33EaAd8d922B1083446DC23f610c2567fB5180f'.toLowerCase()), decimals: 18 },
-            'AAVE': { address: ethers.getAddress('0xd6df30500db6e36d4336069904944f2b93652618'.toLowerCase()), decimals: 18 },
-            'QUICK': { address: ethers.getAddress('0xf28768daa238a2e52b21697284f1076f8a02c98d'.toLowerCase()), decimals: 18 },
-            'USDC': { address: ethers.getAddress('0x3c499c542cef5e3811e1192ce70d8cc03d5c3359'.toLowerCase()), decimals: 6 },
-            'DAI': { address: ethers.getAddress('0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063'.toLowerCase()), decimals: 18 },
-            // Corrected Addresses:
-            'GHST': { address: ethers.getAddress('0x385Eeac5cB85A38A9a07A70c73e0a3271CfB54A7'.toLowerCase()), decimals: 18 },
-            'LDO': { address: ethers.getAddress('0xC3C7CeeF4f2607860B88865e94b2311895a0C3C7'.toLowerCase()), decimals: 18 },
-            'GRT': { address: ethers.getAddress('0x5fe2B58c01396b03525D42D55DB1a9c1c3d072EE'.toLowerCase()), decimals: 18 }
+            'USDT': { address: normalize('0xc2132d05d31c914a87c6611c10748aeb04b58e8f'), decimals: 6 },
+            'POL': { address: normalize('0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270'), decimals: 18 },
+            'WMATIC': { address: normalize('0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270'), decimals: 18 },
+            'WETH': { address: normalize('0x7ceb23fd6bc0ad59f6c078095c510c28342245c4'), decimals: 18 },
+            'WBTC': { address: normalize('0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6'), decimals: 8 },
+            'LINK': { address: normalize('0x53e0bca35ec356bd5dddfebbd1fc0fd03fabad39'), decimals: 18 },
+            'UNI': { address: normalize('0xb33EaAd8d922B1083446DC23f610c2567fB5180f'), decimals: 18 },
+            'AAVE': { address: normalize('0xd6df30500db6e36d4336069904944f2b93652618'), decimals: 18 },
+            'QUICK': { address: normalize('0xf28768daa238a2e52b21697284f1076f8a02c98d'), decimals: 18 },
+            'USDC': { address: normalize('0x3c499c542cef5e3811e1192ce70d8cc03d5c3359'), decimals: 6 },
+            'DAI': { address: normalize('0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063'), decimals: 18 },
+            'GHST': { address: normalize('0x385Eeac5cB85A38A9a07A70c73e0a3271CfB54A7'), decimals: 18 },
+            'LDO': { address: normalize('0xC3C7CeeF4f2607860B88865e94b2311895a0C3C7'), decimals: 18 },
+            'GRT': { address: normalize('0x5fe2B58c01396b03525D42D55DB1a9c1c3d072EE'), decimals: 18 }
         };
 
         const TOKENS: { [key: string]: string } = {}; // Backward compat shim
@@ -202,14 +203,14 @@ export class FlowSniperEngine {
                             console.log(`[Strategy] ${searchTag} [${bestRoute}]: Buy ${buyAmountOut} tokens @ Global $${globalPrice} = $${globalValueUsdt.toFixed(4)} | Gross: $${grossProfit.toFixed(4)} | Net: $${estimatedNetProfit.toFixed(4)}`);
 
                             if (estimatedNetProfit > targetProfit) {
-                                // CIRCUIT BREAKER: Reject unrealistic profits (>300% - relaxed for volatile potential)
+                                // CIRCUIT BREAKER: Reject unrealistic profits (>1000% - relaxed for volatile potential)
                                 const roi = (estimatedNetProfit / Number(this.tradeAmount)) * 100;
-                                if (roi > 300.0) {
+                                if (roi > 1000.0) {
                                     console.warn(`[Strategy] ⚠️ CIRCUIT BREAKER: Trade rejected due to unrealistic ROI (${roi.toFixed(2)}%). GlobalPrice: $${globalPrice}, DexAmount: ${buyAmountOut}. Likely data error.`);
                                     isProfitable = false;
                                 } else {
                                     isProfitable = true;
-                                    console.log(`[Strategy] ✅ ${searchTag} IS PROFITABLE on ${bestRoute}! Executing...`);
+                                    console.log(`[Strategy] ✅ ${searchTag} IS PROFITABLE (ROI: ${roi.toFixed(2)}%) on ${bestRoute}! Executing...`);
                                 }
                             } else if (grossProfit > 0) {
                                 // Provide feedback: Trade found but gas/profit too low
@@ -287,7 +288,6 @@ export class FlowSniperEngine {
                         continue;
                     }
 
-                    this.dailyPnl += actualProfit;
                     this.dailyPnl += actualProfit;
                     if (this.runMode === 'DEMO') {
                         this.totalBalance += actualProfit;

@@ -1,32 +1,28 @@
-// No top-level Node-only imports to prevent Vite bundling errors
-// dotenv for Node environment only
-if (typeof process !== 'undefined' && process.versions && process.versions.node) {
-    import('dotenv').then(dotenv => dotenv.config()).catch(() => { });
-}
+// Basic check if we are in Node.js
+const isNode = typeof process !== 'undefined' && process.versions && process.versions.node;
 
 export interface ProxyConfig {
     enabled: boolean;
-    url: string; // protocol://[user:pass@]host:port
+    url: string;
 }
 
 class ProxyManager {
     private agent: any = null;
-    private config: ProxyConfig;
     private freeProxyList: string[] = [];
     private currentProxyIndex: number = -1;
     private isInitializing: boolean = false;
 
     constructor() {
-        // Safe env access for both Vite and Node
-        const enabled = (typeof process !== 'undefined' ? process.env.VITE_PROXY_ENABLED : (import.meta as any).env?.VITE_PROXY_ENABLED) === 'true';
-        const url = (typeof process !== 'undefined' ? process.env.VITE_PROXY_URL : (import.meta as any).env?.VITE_PROXY_URL) || '';
-
-        this.config = { enabled, url };
-
-        // If static proxy is provided in .env, try to use it first
-        if (enabled && url && !url.includes('sua_url_aqui')) {
+        // We delay agent initialization if we don't have the URL yet
+        const url = this.getEnvUrl();
+        if (this.isEnabled() && url && !url.includes('sua_url_aqui')) {
             this.initializeAgent(url);
         }
+    }
+
+    private getEnvUrl(): string {
+        if (isNode) return process.env.VITE_PROXY_URL || '';
+        return (import.meta as any).env?.VITE_PROXY_URL || '';
     }
 
     private async initializeAgent(url: string) {
@@ -93,8 +89,9 @@ class ProxyManager {
         return this.agent;
     }
 
-    isEnabled() {
-        return this.config.enabled;
+    isEnabled(): boolean {
+        if (isNode) return process.env.VITE_PROXY_ENABLED === 'true';
+        return (import.meta as any).env?.VITE_PROXY_ENABLED === 'true';
     }
 
     /**
@@ -114,7 +111,7 @@ class ProxyManager {
         if (!this.agent) {
             const rotated = await this.rotateProxy();
             if (!rotated && retryCount < 3) {
-                console.warn("[Proxy] No working proxies found. Using direct connection as last resort.");
+                console.warn("[Proxy] Nenhum proxy funcional encontrado. Usando conexão direta como último recurso.");
                 return fetch(url, options);
             }
         }
@@ -122,22 +119,33 @@ class ProxyManager {
         try {
             // @ts-ignore
             const nodeFetch = (await import('node-fetch')).default;
+
+            // Convert Uint8Array body to Buffer for node-fetch compatibility
+            let body = options.body;
+            if (body && body instanceof Uint8Array) {
+                body = Buffer.from(body);
+            }
+
             const response = await nodeFetch(url, {
                 ...options,
+                body,
                 agent: this.agent,
                 timeout: 15000
             });
 
             if (!response.ok && (response.status === 403 || response.status === 429) && retryCount < 5) {
-                console.warn(`[Proxy] API Blocked (${response.status}) on ${url}. Rotating...`);
+                console.warn(`[Proxy] API Bloqueada (${response.status}) em ${url}. Rotacionando...`);
                 await this.rotateProxy();
                 return this.proxyFetch(url, options, retryCount + 1);
             }
 
             return response;
         } catch (e: any) {
-            if (retryCount < 5) {
-                console.warn(`[Proxy] Connection failed to ${url}: ${e.message}. Rotating...`);
+            const retryableErrors = ['ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED', 'EHOSTUNREACH'];
+            const isRetryable = retryableErrors.some(code => e.code === code || e.message?.includes(code));
+
+            if ((isRetryable || retryCount < 2) && retryCount < 5) {
+                console.warn(`[Proxy] Conexão falhou para ${url}: ${e.message}. Rotacionando e tentando novamente (${retryCount + 1}/5)...`);
                 await this.rotateProxy();
                 return this.proxyFetch(url, options, retryCount + 1);
             }
@@ -175,7 +183,7 @@ class ProxyManager {
 
             return {
                 statusCode: response.status,
-                statusMessage: response.statusText,
+                statusMessage: response.statusText || "OK",
                 headers: headers,
                 body: new Uint8Array(bodyBuffer)
             };

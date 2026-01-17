@@ -83,6 +83,33 @@ const initialBalance = 1000.0;
 let lastStatus = "IDLE";
 let lastProfit = "0.0000";
 
+// WATCHDOG SYSTEM
+let lastPulseTime = Date.now();
+let watchdogTimer: NodeJS.Timeout | null = null;
+
+const resetWatchdog = () => {
+    lastPulseTime = Date.now();
+};
+
+const startWatchdog = () => {
+    if (watchdogTimer) clearInterval(watchdogTimer);
+    watchdogTimer = setInterval(() => {
+        const inactiveTime = Date.now() - lastPulseTime;
+        if (currentConfig.isRunning && inactiveTime > 5 * 60 * 1000) { // 5 minutes
+            console.warn(`[Watchdog] Inatividade detectada (${Math.round(inactiveTime / 1000)}s). Reiniciando bot...`);
+            stopBot();
+            setTimeout(() => startBot(), 2000);
+        }
+    }, 60000); // Check every minute
+};
+
+const stopWatchdog = () => {
+    if (watchdogTimer) {
+        clearInterval(watchdogTimer);
+        watchdogTimer = null;
+    }
+};
+
 const bot = new FlowSniperEngine(
     (step: FlowStep) => {
         const time = step.timestamp;
@@ -95,9 +122,11 @@ const bot = new FlowSniperEngine(
         if (step.profit !== 0) lastProfit = profit;
 
         if (type === 'SCAN_PULSE') {
-            process.stdout.write(`\r[${time}] Scanning: ${pair} `);
+            resetWatchdog();
+            process.stdout.write(`\r[${time}] Varrendo: ${pair} `);
         } else {
-            console.log(`\n[${time}] [${type}] ${pair} | Profit: ${profit} | Status: ${status} | Hash: ${step.hash || 'N/A'}`);
+            resetWatchdog();
+            console.log(`\n[${time}] [${type}] ${pair} | Lucro: ${profit} | Status: ${status} | Hash: ${step.hash || 'N/A'}`);
         }
     },
     (gas: number) => { },
@@ -105,22 +134,31 @@ const bot = new FlowSniperEngine(
 );
 
 process.on('SIGINT', () => {
-    console.log('\nStopping bot...');
-    bot.stop();
+    console.log('\nEncerrando bot...');
+    stopBot();
     process.exit();
 });
 
-// START FUNCTION
+// START/STOP HELPER
+const stopBot = () => {
+    console.log("Parando Engine...");
+    bot.stop();
+    stopWatchdog();
+};
+
 const startBot = () => {
-    applyConfig(); // Ensure services have latest keys
-    console.log(`Starting Bot in ${currentConfig.mode} mode...`);
+    applyConfig(); // Garante que os serviços tenham as chaves mais recentes
+    console.log(`Iniciando Bot em modo ${currentConfig.mode}...`);
+
+    startWatchdog();
+    resetWatchdog();
 
     // Pass config values to engine
     bot.start(
         currentConfig.mode,
         initialGas,
         initialBalance,
-        { action: "HOLD", confidence: 0, reason: "Auto-Start" }, // Dummy initial analysis
+        { action: "HOLD", confidence: 0, reason: "Auto-Start" },
         currentConfig.tradeAmount,
         currentConfig.slippage,
         currentConfig.minProfit,
@@ -132,18 +170,21 @@ const startBot = () => {
 const initialize = () => {
     proxyManager.validateConnection().then(isValid => {
         if (!isValid) {
-            console.error("CRITICAL: Proxy validation failed. Aborting startup.");
+            console.error("CRÍTICO: Falha na validação do Proxy. Abortando inicialização.");
+            // We wait and try again instead of giving up entirely
+            setTimeout(() => initialize(), 30000);
             return;
         }
 
-        console.log("Proxy validated.");
-        applyConfig(); // Apply initial config
+        console.log("Proxy validado com sucesso.");
+        applyConfig();
 
         if (currentConfig.isRunning) {
             startBot();
         }
     }).catch(err => {
-        console.error("CRITICAL: Error during startup proxy check:", err);
+        console.error("CRÍTICO: Erro durante verificação de proxy no startup:", err);
+        setTimeout(() => initialize(), 30000);
     });
 };
 
