@@ -1,4 +1,6 @@
 
+import { proxyManager } from './proxy_utils';
+
 export const analyzePerformance = async (assets: any[], transactions: any[], apiKey?: string) => {
   const prompt = `Analise a seguinte carteira e histórico de operações do robô FlowSniper:
   Assets: ${JSON.stringify(assets)}
@@ -22,7 +24,7 @@ export const analyzePerformance = async (assets: any[], transactions: any[], api
 
     console.log("🤖 Using OpenAI API for analysis...");
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await proxyManager.proxyFetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

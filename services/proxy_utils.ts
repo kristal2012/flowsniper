@@ -1,10 +1,8 @@
-import { HttpsProxyAgent } from 'https-proxy-agent';
-import { SocksProxyAgent } from 'socks-proxy-agent';
-import { Agent as HttpAgent } from 'http';
-import { Agent as HttpsAgent } from 'https';
-import dotenv from 'dotenv';
-
-dotenv.config();
+// No top-level Node-only imports to prevent Vite bundling errors
+// dotenv for Node environment only
+if (typeof process !== 'undefined' && process.versions && process.versions.node) {
+    import('dotenv').then(dotenv => dotenv.config()).catch(() => { });
+}
 
 export interface ProxyConfig {
     enabled: boolean;
@@ -12,23 +10,83 @@ export interface ProxyConfig {
 }
 
 class ProxyManager {
-    private agent: HttpAgent | HttpsAgent | null = null;
+    private agent: any = null;
     private config: ProxyConfig;
+    private freeProxyList: string[] = [];
+    private currentProxyIndex: number = -1;
+    private isInitializing: boolean = false;
 
     constructor() {
-        const enabled = process.env.VITE_PROXY_ENABLED === 'true';
-        const url = process.env.VITE_PROXY_URL || '';
+        // Safe env access for both Vite and Node
+        const enabled = (typeof process !== 'undefined' ? process.env.VITE_PROXY_ENABLED : (import.meta as any).env?.VITE_PROXY_ENABLED) === 'true';
+        const url = (typeof process !== 'undefined' ? process.env.VITE_PROXY_URL : (import.meta as any).env?.VITE_PROXY_URL) || '';
 
         this.config = { enabled, url };
 
-        if (enabled && url) {
+        // If static proxy is provided in .env, try to use it first
+        if (enabled && url && !url.includes('sua_url_aqui')) {
+            this.initializeAgent(url);
+        }
+    }
+
+    private async initializeAgent(url: string) {
+        if (typeof window !== 'undefined') return; // Do not initialize agents in browser
+
+        try {
             console.log(`[Proxy] Initializing with: ${url.replace(/:([^:@]+)@/, ':****@')}`);
             if (url.startsWith('socks')) {
+                const { SocksProxyAgent } = await import('socks-proxy-agent');
                 this.agent = new SocksProxyAgent(url);
             } else {
+                const { HttpsProxyAgent } = await import('https-proxy-agent');
                 this.agent = new HttpsProxyAgent(url);
             }
+        } catch (e) {
+            console.error("[Proxy] Failed to initialize agent for URL:", url, e);
+            this.agent = null;
         }
+    }
+
+    private async fetchFreeProxies() {
+        if (this.isInitializing) return;
+        this.isInitializing = true;
+
+        console.log("[Proxy] Fetching fresh free SOCKS5 proxy list...");
+        try {
+            const response = await fetch('https://api.proxyscrape.com/v2/?request=displayproxies&protocol=socks5&timeout=10000&country=all&ssl=all&anonymity=all');
+            if (response.ok) {
+                const text = await response.text();
+                const proxies = text.split('\n').map(p => p.trim()).filter(p => p.length > 0);
+                if (proxies.length > 0) {
+                    this.freeProxyList = proxies.map(p => `socks5://${p}`);
+                    console.log(`[Proxy] Loaded ${this.freeProxyList.length} free proxies.`);
+                    this.currentProxyIndex = 0;
+                    return;
+                }
+            }
+        } catch (e) {
+            console.error("[Proxy] Error fetching from ProxyScrape:", e);
+        } finally {
+            this.isInitializing = false;
+        }
+    }
+
+    async rotateProxy(): Promise<boolean> {
+        if (typeof window !== 'undefined') return false;
+
+        if (this.freeProxyList.length === 0 || this.currentProxyIndex >= this.freeProxyList.length - 1) {
+            await this.fetchFreeProxies();
+        } else {
+            this.currentProxyIndex++;
+        }
+
+        if (this.freeProxyList.length > 0 && this.currentProxyIndex < this.freeProxyList.length) {
+            const nextUrl = this.freeProxyList[this.currentProxyIndex];
+            console.log(`[Proxy] Rotating to new candidate: ${nextUrl}`);
+            await this.initializeAgent(nextUrl);
+            return true;
+        }
+        return false;
     }
 
     getAgent() {
@@ -41,35 +99,87 @@ class ProxyManager {
 
     /**
      * Specialized fetch that injects the proxy agent if enabled.
-     * Uses node-fetch in Node environments.
+     * Uses automatic rotation if the current proxy fails.
      */
-    /**
-     * Specialized fetch that injects the proxy agent if enabled.
-     * Uses node-fetch in Node environments.
-     */
-    async proxyFetch(url: string, options: any = {}) {
-        if (this.isEnabled()) {
-            if (!this.agent) {
-                // If proxy is enabled but agent is null, it's a critical error configuration
-                throw new Error("[Proxy] Enabled but failed to initialize agent. Aborting request to prevent IP leak.");
-            }
+    async proxyFetch(url: string, options: any = {}, retryCount = 0): Promise<any> {
+        if (!this.isEnabled()) {
+            return fetch(url, options);
+        }
 
-            // Note: In Node.js environment, we use node-fetch with the agent.
-            // When running in the browser (Vite dev), this file shouldn't be used for API calls
-            // as the browser uses the built-in fetch and Vite handles the proxy.
-            try {
-                // @ts-ignore
-                const nodeFetch = (await import('node-fetch')).default;
-                return nodeFetch(url, {
-                    ...options,
-                    agent: this.agent
-                });
-            } catch (e) {
-                console.error("[Proxy] node-fetch not found or error importing", e);
-                throw e; // Fail hard if we can't use the proxy
+        // Browser fallback: Use native fetch without agent
+        if (typeof window !== 'undefined') {
+            return fetch(url, options);
+        }
+
+        if (!this.agent) {
+            const rotated = await this.rotateProxy();
+            if (!rotated && retryCount < 3) {
+                console.warn("[Proxy] No working proxies found. Using direct connection as last resort.");
+                return fetch(url, options);
             }
         }
-        return fetch(url, options); // Fallback only if proxy is explicitly DISABLED
+
+        try {
+            // @ts-ignore
+            const nodeFetch = (await import('node-fetch')).default;
+            const response = await nodeFetch(url, {
+                ...options,
+                agent: this.agent,
+                timeout: 15000
+            });
+
+            if (!response.ok && (response.status === 403 || response.status === 429) && retryCount < 5) {
+                console.warn(`[Proxy] API Blocked (${response.status}) on ${url}. Rotating...`);
+                await this.rotateProxy();
+                return this.proxyFetch(url, options, retryCount + 1);
+            }
+
+            return response;
+        } catch (e: any) {
+            if (retryCount < 5) {
+                console.warn(`[Proxy] Connection failed to ${url}: ${e.message}. Rotating...`);
+                await this.rotateProxy();
+                return this.proxyFetch(url, options, retryCount + 1);
+            }
+            throw e;
+        }
+    }
+
+    /**
+     * Returns a fetch-like function for ethers.js v6 FetchRequest.getUrl
+     */
+    getEthersFetch() {
+        return async (req: any) => {
+            if (typeof window !== 'undefined') {
+                // In browser, let ethers use its default fetch
+                return null; // Returning null/undefined might not work, let's just do a plain fetch
+            }
+
+            const url = req.url;
+            const options: any = {
+                method: req.method,
+                headers: req.headers,
+                body: req.body
+            };
+
+            const response = await this.proxyFetch(url, options);
+
+            // Fetch body as ArrayBuffer
+            const bodyBuffer = await response.arrayBuffer();
+
+            // Map headers
+            const headers: Record<string, string> = {};
+            response.headers.forEach((value: string, key: string) => {
+                headers[key.toLowerCase()] = value;
+            });
+
+            return {
+                statusCode: response.status,
+                statusMessage: response.statusText,
+                headers: headers,
+                body: new Uint8Array(bodyBuffer)
+            };
+        };
     }
 
     /**
@@ -94,6 +204,10 @@ class ProxyManager {
             }
         } catch (error) {
             console.error('[Proxy] Validation failed with error:', error);
+            if (typeof window === 'undefined') {
+                const rotated = await this.rotateProxy();
+                if (rotated) return this.validateConnection();
+            }
             return false;
         }
     }

@@ -1,5 +1,6 @@
 
 import { ethers, JsonRpcProvider, Wallet, Contract, BrowserProvider } from 'ethers';
+import { proxyManager } from './proxy_utils';
 
 // Standard ERC20 ABI (Minimal)
 const ERC20_ABI = [
@@ -172,16 +173,29 @@ export class BlockchainService {
 
     private getProvider(): JsonRpcProvider {
         const rpc = this.getRPC();
-        try {
-            // Explicitly verify if it's Alchemy and prioritize it
-            if (rpc.includes('alchemy.com')) {
-                console.log("[BlockchainService] Using Alchemy Premium RPC");
+        const proxiedFetch = proxyManager.getEthersFetch();
+
+        const createProvider = (url: string) => {
+            if (typeof window !== 'undefined') {
+                return new JsonRpcProvider(url, 137, { staticNetwork: true });
             }
-            // Explicitly set network to 137 (Polygon) for faster initialization
-            return new JsonRpcProvider(rpc, 137, { staticNetwork: true });
+
+            // Use FetchRequest to inject our proxied fetch for Node environment
+            const fetchReq = new ethers.FetchRequest(url);
+            // @ts-ignore - ethers v6 allows overriding the getUrl property directly
+            fetchReq.getUrl = proxiedFetch;
+
+            return new JsonRpcProvider(fetchReq, 137, { staticNetwork: true });
+        };
+
+        try {
+            if (rpc.includes('alchemy.com')) {
+                console.log("[BlockchainService] Using Alchemy Premium RPC (Proxied)");
+            }
+            return createProvider(rpc);
         } catch (e) {
-            console.warn("[BlockchainService] Primary RPC (Alchemy) failed, using fallback:", FALLBACK_RPCS[0]);
-            return new JsonRpcProvider(FALLBACK_RPCS[0], 137, { staticNetwork: true });
+            console.warn("[BlockchainService] Primary RPC failed, using fallback:", FALLBACK_RPCS[0]);
+            return createProvider(FALLBACK_RPCS[0]);
         }
     }
 
