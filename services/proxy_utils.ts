@@ -48,11 +48,20 @@ class ProxyManager {
         }
     }
 
+    private lastFreeFetchAttempt: number = 0;
+    private readonly FETCH_COOLDOWN = 15 * 60 * 1000; // 15 minutos
+
     private async fetchFreeProxies() {
         if (this.isInitializing) return;
+
+        const now = Date.now();
+        if (now - this.lastFreeFetchAttempt < this.FETCH_COOLDOWN) {
+            return; // Tranquilo, sem spammear o log
+        }
+
+        this.lastFreeFetchAttempt = now;
         this.isInitializing = true;
 
-        console.log("[Proxy] Buscando lista de proxies SOCKS5 gratuitos...");
         try {
             const response = await fetch('https://api.proxyscrape.com/v2/?request=displayproxies&protocol=socks5&timeout=10000&country=all&ssl=all&anonymity=all');
             if (response.ok) {
@@ -66,7 +75,7 @@ class ProxyManager {
                 }
             }
         } catch (e) {
-            console.error("[Proxy] Erro ao buscar proxies do ProxyScrape:", e);
+            // Silencioso para não poluir
         } finally {
             this.isInitializing = false;
         }

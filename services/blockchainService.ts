@@ -215,7 +215,10 @@ export class BlockchainService {
             const amounts = await router.getAmountsOut(amountWei, path);
             return amounts;
         } catch (e: any) {
-            console.error(`[BlockchainService] getAmountsOut Falhou (${path[0]}->${path[1]}):`, e.message);
+            // Silenciamos "execution reverted" porque é comum em pares sem liquidez
+            if (!e.message?.includes('execution reverted')) {
+                console.error(`[BlockchainService] getAmountsOut Falhou (${path[0]}->${path[1]}):`, e.message);
+            }
             return [];
         }
     }
@@ -236,7 +239,10 @@ export class BlockchainService {
                 try {
                     return await quoter.quoteExactInputSingle.staticCall(tokenIn, tokenOut, fee, amountWei, 0);
                 } catch (e: any) {
-                    console.warn(`[BlockchainService] Falha quote V3 tier ${fee}:`, e.message.substring(0, 100));
+                    // Logs de aviso apenas para erros que não sejam reversão comum
+                    if (!e.message?.includes('execution reverted')) {
+                        console.warn(`[BlockchainService] Falha quote V3 tier ${fee}:`, e.message.substring(0, 100));
+                    }
                     return BigInt(0);
                 }
             }));
@@ -244,7 +250,9 @@ export class BlockchainService {
             quotes.forEach((q) => { if (q > bestQuoteWei) bestQuoteWei = q; });
             return ethers.formatUnits(bestQuoteWei, decimalsOut);
         } catch (e: any) {
-            console.error("[BlockchainService] getQuoteV3 Falhou:", e.message);
+            if (!e.message?.includes('execution reverted')) {
+                console.error("[BlockchainService] getQuoteV3 Falhou:", e.message);
+            }
             return "0";
         }
     }
@@ -551,13 +559,17 @@ export class BlockchainService {
             '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270': 18, // POL/WMATIC
             '0x7ceb23fd6bc0ad59f6c078095c510c28342245c4': 18, // WETH
             '0x53e0bca35ec356bd5dddfebbd1fc0fd03fabad39': 18, // LINK
-            '0xb33EaAd8d922B1083446DC23f610c2567fB5180f': 18, // UNI
+            '0xb33eaad8d922b14833400e19b271d8f691630c3a': 18, // UNI
             '0xd6df30500db6e36d4336069904944f2b93652618': 18, // AAVE
-            '0xf28768daa238a2e52b21697284f1076f8a02c98d': 18, // QUICK
-            '0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063': 18, // DAI
-            '0xc3c7ceef4f2607860b88865e94b2311895a0c3c7': 18, // LDO (Corrected)
-            '0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7': 18, // GHST (Corrected)
-            '0x5fe2b58c01396b03525d42d55db1a9c1c3d072ee': 18, // GRT
+            '0xb5c064f955d8e7f38fe0460c556a722fabb24b3a': 18, // QUICK (Corrected)
+            '0x8f3cf7ad23cd3cadbd9735aff958023239c6a063': 18, // DAI
+            '0x13313d5b943264fc7729f635649938b816223d6a': 18, // LDO
+            '0x385a6061f584773cc0016fa0343714652288004b': 18, // GHST
+            '0x5fe2b58c013d7601147dcdd68c143a77499f5531': 18, // GRT
+            '0xbbba073c31bf03b8acf7c28ef0738decf3695683': 18, // SAND
+            '0x172370d5cd6322a39e03c40a3e1bc76417772aea': 18, // CRV
+            '0x0b3f868e0be5597d5db7feb59e1cadbb0fdda50a': 18, // SUSHI
+            '0x9a71011361935e9097d620f59c3c79b110eaadc7': 18, // BAL
 
             // Special (8)
             '0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6': 8, // WBTC

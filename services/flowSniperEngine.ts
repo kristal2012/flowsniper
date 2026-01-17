@@ -201,7 +201,8 @@ export class FlowSniperEngine {
                                 }
                             }
                         } else {
-                            console.warn(`[Scan] ${searchTag}: Sem liquidez detectada nas DEXes.`);
+                            // Silencioso para não poluir o terminal, visível apenas se quisermos depurar
+                            // console.log(`[Scan] ${searchTag}: Liquidez insuficiente.`);
                         }
 
                         if (isProfitable) {
