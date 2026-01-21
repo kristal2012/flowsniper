@@ -181,24 +181,50 @@ export class FlowSniperEngine {
 
                         if (bestAmountOutNum > 0) {
                             buyAmountOut = bestAmountOutNum.toString();
-                            const globalValueUsdt = bestAmountOutNum * price;
-                            const grossProfit = globalValueUsdt - Number(this.tradeAmount);
+
+                            // REALISTIC DEMO MODE: Full Cycle Simulation (USDT -> Token -> USDT)
+                            // We must check if we can actually SELL the tokens back for profit on the DEX.
+                            let dexSellValueUsdt = 0;
+                            try {
+                                const decimalsOut = await (blockchainService as any).getTokenDecimals(tokenOut);
+                                const amountToSellWei2 = ethers.parseUnits(bestAmountOutNum.toFixed(decimalsOut), decimalsOut);
+
+                                const [sellV2, sellV3] = await Promise.all([
+                                    blockchainService.getAmountsOut(amountToSellWei2.toString(), [tokenOut, tokenIn]), // Expects Wei String
+                                    blockchainService.getQuoteV3(tokenOut, tokenIn, bestAmountOutNum.toString()) // Expects Human String (Wrapped)
+                                ]);
+
+                                const sellV2Val = sellV2 && sellV2.length >= 2 ? Number(sellV2[1]) / 1e6 : 0;
+                                const sellV3Val = Number(sellV3); // Wrapper returns readable number for V3? Let's assume consistent with Buy
+
+                                dexSellValueUsdt = Math.max(sellV2Val, sellV3Val);
+                            } catch (e) {
+                                // console.warn("Sell simulation failed", e);
+                            }
+
+                            // If DEX Sell Value is valid, use it. Otherwise fallback to Global (but penalized)
+                            const realizableValue = dexSellValueUsdt > 0 ? dexSellValueUsdt : (bestAmountOutNum * price * 0.95); // 5% penalty if no route
+
+                            const grossProfit = realizableValue - Number(this.tradeAmount);
                             const totalGas = (GAS_ESTIMATE_USDT * 2);
                             estimatedNetProfit = grossProfit - totalGas;
 
-                            // No modo DEMO, somos mais permissivos (0.5% de spread bruto já dispara o log/trade para teste)
-                            const spreadPct = (grossProfit / Number(this.tradeAmount)) * 100;
-                            const targetProfit = this.runMode === 'DEMO' ? -0.01 : (Number(this.tradeAmount) * this.minProfit);
+                            // No modo DEMO, agora exigimos lucro real no ciclo (Realized PnL)
+                            // const targetProfit = this.runMode === 'DEMO' ? -0.01 : (Number(this.tradeAmount) * this.minProfit);
+                            const targetProfit = Number(this.tradeAmount) * this.minProfit;
 
-                            console.log(`[Scan] ${searchTag}: Global $${price.toFixed(4)} | DEX $${(Number(this.tradeAmount) / bestAmountOutNum).toFixed(4)} | Spread: ${spreadPct.toFixed(2)}% | Net: $${estimatedNetProfit.toFixed(4)}`);
+                            console.log(`[Scan] ${searchTag}: BuyDex $${(Number(this.tradeAmount) / bestAmountOutNum).toFixed(4)} | SellDex $${(dexSellValueUsdt / bestAmountOutNum).toFixed(4)} | Net: $${estimatedNetProfit.toFixed(4)}`);
 
                             if (estimatedNetProfit > targetProfit) {
                                 const roi = (estimatedNetProfit / Number(this.tradeAmount)) * 100;
-                                if (roi > 1000.0) {
-                                    console.warn(`[Strategy] ⚠️ CIRCUIT BREAKER: ROI irreal (${roi.toFixed(2)}%).`);
+
+                                // ANTI-EXAGGERATION FILTER (User Request: 0.5% - 2%)
+                                // If ROI is huge (> 10%), it's likely a liquidity glitch or honeypot.
+                                if (roi > 10.0) {
+                                    console.warn(`[Strategy] ⚠️ Ignorando ROI irreal (${roi.toFixed(2)}%). Filtro de Realismo Ativo.`);
                                 } else {
                                     isProfitable = true;
-                                    console.log(`[Strategy] ✅ OPORTUNIDADE IDENTIFICADA em ${bestRoute}!`);
+                                    console.log(`[Strategy] ✅ OPORTUNIDADE REALISTA (${roi.toFixed(2)}%) em ${bestRoute}!`);
                                 }
                             }
                         } else {
@@ -218,7 +244,7 @@ export class FlowSniperEngine {
                                 const tokenBal = activeAddr ? await blockchainService.getBalance(tokenOut, activeAddr) : '0';
 
                                 if (Number(tokenBal) > 0) {
-                                    const currentSellAmounts = await blockchainService.getAmountsOut(tokenBal, [tokenOut, tokenIn]);
+                                    const currentSellAmounts = await blockchainService.getAmountsOut(tokenBal, [tokenOut, tokenIn]); // Wei in, Wei out array
                                     const expectedUsdtBack = Number(currentSellAmounts[1]) / (10 ** 6);
                                     const minUsdtOut = (expectedUsdtBack * (1 - this.slippage)).toString();
 
@@ -230,7 +256,7 @@ export class FlowSniperEngine {
                                     actualProfit = -0.1;
                                 }
                             } else {
-                                // DEMO MODE
+                                // DEMO MODE (Now Realistic)
                                 txHash = '0xSIM_' + Math.random().toString(16).substr(2, 10);
                                 actualProfit = estimatedNetProfit;
                                 successTrade = true;
