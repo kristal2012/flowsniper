@@ -99,7 +99,8 @@ export class FlowSniperEngine {
                     id: 'pulse-' + Date.now(),
                     timestamp: new Date().toLocaleTimeString(),
                     type: 'SCAN_PULSE',
-                    pair: 'DEX vs Global: Buscando distorções...',
+                    pair: 'DEX vs Global',
+                    path: ['Scanning', 'Market', 'Pairs'],
                     profit: 0,
                     status: 'SUCCESS',
                     hash: ''
@@ -248,7 +249,8 @@ export class FlowSniperEngine {
                                 id: Math.random().toString(36).substr(2, 9),
                                 timestamp: new Date().toLocaleTimeString(),
                                 type: 'ROUTE_OPTIMIZATION',
-                                pair: `${randomSymbol.replace('USDT', '')}/USDT (${bestRoute})`,
+                                pair: `${randomSymbol.replace('USDT', '')}/USDT`,
+                                path: ['USDT', randomSymbol.replace('USDT', ''), bestRoute],
                                 profit: actualProfit,
                                 status: 'SUCCESS',
                                 hash: txHash

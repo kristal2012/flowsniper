@@ -658,7 +658,7 @@ const App: React.FC = () => {
                             <div className="flex items-center gap-4">
                               <div className={`w-1.5 h-1.5 rounded-full ${log.profit < 0 ? 'bg-rose-500' : 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]'}`}></div>
                               <div className="flex flex-col">
-                                <span className="text-zinc-400 font-black">{log.path.join(' → ')}</span>
+                                <span className="text-zinc-400 font-black">{(log.path || [log.pair]).join(' → ')}</span>
                                 <span className="text-zinc-600 text-[9px]">{log.timestamp}</span>
                               </div>
                             </div>
@@ -806,7 +806,7 @@ const App: React.FC = () => {
                             <span className={`font-black uppercase tracking-tighter text-sm ${log.status === 'EXPIRED' ? 'text-zinc-600' : (log.profit < 0 ? 'text-rose-500' : 'text-emerald-500')}`}>
                               {log.status === 'EXPIRED' ? (log.path[0].includes('AI') ? 'AI Brain Processing' : 'Scanning Network') : (log.profit < 0 ? 'Cost Recapture' : 'Successful Snipe')}
                             </span>
-                            <span className="text-zinc-500 text-[10px] mt-1 font-bold">{log.path.join(' → ')}</span>
+                            <span className="text-zinc-500 text-[10px] mt-1 font-bold">{(log.path || [log.pair]).join(' → ')}</span>
                           </div>
                         </div>
                         <div className="flex items-center gap-6">

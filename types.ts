@@ -73,6 +73,7 @@ export interface FlowStep {
   timestamp: string;
   type: FlowOperation;
   pair: string; // e.g. "WMATIC/USDC"
+  path?: string[];
   profit: number;
   status: 'SUCCESS' | 'FAILED';
   hash: string;
