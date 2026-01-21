@@ -36,13 +36,11 @@ import {
 import { Asset, Transaction, PerformanceData, ManagerProfile, SniperStep, FlowStep } from './types';
 import { mockManager, mockAssets, mockPerformance, mockTransactions } from './services/mockData';
 import { analyzePerformance } from './services/openai';
-// MOCKS FOR DELETED IMPORTS
-const fetchCurrentPrice = async (symbol: string) => { return 1.00; }; // Mock Price
-const fetchHistoricalData = async (s: string, i: string, l: number) => { return []; }; // Mock Data
-class FlowSniperEngine { static start() { } static stop() { } } // Mock Engine
-
+import { FlowSniperEngine } from './services/flowSniperEngine';
+import { marketDataService } from './services/marketDataService';
 import { blockchainService } from './services/blockchainService';
 import { botApi } from './services/botControl';
+import { fetchCurrentPrice, fetchHistoricalData } from './services/marketDataService';
 
 const App: React.FC = () => {
   // Estados de Controle
@@ -136,40 +134,72 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // --- REMOTE BOT SYNC LOOP ---
+  const engineRef = useRef<FlowSniperEngine | null>(null);
+
   useEffect(() => {
+    // Initialize Browser Engine
+    engineRef.current = new FlowSniperEngine(
+      (log) => setSniperLogs(prev => [log, ...prev].slice(0, 100)), // Log Callback
+      (gas) => setDemoGasBalance(gas), // Gas Callback
+      (bal) => setDemoBalance(bal) // Balance Callback
+    );
+
     const syncBot = async () => {
-      const status = await botApi.getStatus();
-      if (status) {
-        setIsRemoteConnected(true);
-        setBotActive(status.running);
-        setMode(status.mode); // Sync mode from server
-        setRemoteStatus(status.lastStatus || "Idle");
-        // If server has profit info, we could sync it too, but local aggregation is complex.
-        // For now let's trust the server's mode.
-      } else {
+      try {
+        const status = await botApi.getStatus();
+        if (status) {
+          setIsRemoteConnected(true);
+          setBotActive(status.running);
+          setMode(status.mode);
+          setRemoteStatus(status.lastStatus || "Idle");
+        } else {
+          setIsRemoteConnected(false);
+          setRemoteStatus("Browser Mode (Standalone)");
+        }
+      } catch (e) {
         setIsRemoteConnected(false);
-        setRemoteStatus("Offline (Start PM2 Bot)");
+        setRemoteStatus("Browser Mode (Standalone)");
       }
     };
 
     syncBot();
-    const interval = setInterval(syncBot, 2000); // Poll every 2s
+    const interval = setInterval(syncBot, 5000); // Poll slower for remote
     return () => clearInterval(interval);
   }, []);
 
   const toggleBot = async () => {
-    if (!isRemoteConnected) {
-      alert("Erro: O Robô 24h (PM2) parece estar desligado. Inicie ele primeiro com o arquivo INICIAR_ROBO_24H.bat");
+    // 1. Try Remote First
+    if (isRemoteConnected) {
+      if (botActive) {
+        await botApi.stop();
+        setBotActive(false);
+      } else {
+        await botApi.start();
+        setBotActive(true);
+      }
       return;
     }
 
+    // 2. Fallback to Browser Engine
     if (botActive) {
-      await botApi.stop();
-      setBotActive(false); // Optimistic update
+      engineRef.current?.stop();
+      setBotActive(false);
     } else {
-      await botApi.start();
-      setBotActive(true); // Optimistic update
+      setBotActive(true);
+      // Start Engine with current context
+      const currentGas = mode === 'DEMO' ? demoGasBalance : parseFloat(realPolBalance);
+      const currentBal = mode === 'DEMO' ? demoBalance : parseFloat(realUsdtBalance);
+
+      engineRef.current?.start(
+        mode,
+        currentGas || 0,
+        currentBal || 0,
+        analysis,
+        tradeAmount,
+        parseFloat(slippage),
+        parseFloat(minProfit),
+        parseFloat(consolidationThreshold)
+      );
     }
   };
 
@@ -177,8 +207,32 @@ const App: React.FC = () => {
     setMode(newMode);
     if (isRemoteConnected) {
       await botApi.updateConfig({ mode: newMode });
+    } else {
+      // Update local engine immediately
+      if (botActive) {
+        engineRef.current?.stop();
+        setTimeout(() => toggleBot(), 100); // Restart with new mode
+      }
     }
   };
+
+  // SYNC CONTEXT TO ENGINE (BROWSER MODE)
+  useEffect(() => {
+    if (!botActive || isRemoteConnected) return;
+
+    const currentGas = mode === 'DEMO' ? demoGasBalance : parseFloat(realPolBalance);
+    const currentBal = mode === 'DEMO' ? demoBalance : parseFloat(realUsdtBalance);
+
+    engineRef.current?.updateContext(
+      currentGas || 0,
+      currentBal || 0,
+      analysis,
+      tradeAmount,
+      parseFloat(slippage),
+      parseFloat(minProfit),
+      parseFloat(consolidationThreshold)
+    );
+  }, [demoGasBalance, demoBalance, realPolBalance, realUsdtBalance, analysis, tradeAmount, slippage, minProfit, consolidationThreshold, botActive, isRemoteConnected]);
 
   // AUTO-SYNC SETTINGS TO BACKEND
   useEffect(() => {
