@@ -24,3 +24,5 @@ dist-ssr
 *.sw?
 .env
 bot_config.json
+*.tar.gz
+*.zip
