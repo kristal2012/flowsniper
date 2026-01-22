@@ -214,10 +214,24 @@ export class FlowSniperEngine {
                             const targetProfit = Number(this.tradeAmount) * this.minProfit;
 
                             console.log(`[Scan] ${searchTag}: BuyDex $${(Number(this.tradeAmount) / bestAmountOutNum).toFixed(4)} | SellDex $${(dexSellValueUsdt / bestAmountOutNum).toFixed(4)} | Net: $${estimatedNetProfit.toFixed(4)}`);
+                            
+                            const roi = (estimatedNetProfit / Number(this.tradeAmount)) * 100;
+
+                            // LOG EVERY SCAN (THROTTLED) - TO SHOW ACTIVITY
+                            if (roi < 0 && Math.random() < 0.2) {
+                                  this.onLog({
+                                    id: 'scan-' + Date.now(),
+                                    timestamp: new Date().toLocaleTimeString(),
+                                    type: 'LIQUIDITY_SCAN',
+                                    pair: `${searchTag}/USDT`,
+                                    path: [`Spread: ${roi.toFixed(2)}%`, `Net: $${estimatedNetProfit.toFixed(2)}`],
+                                    profit: estimatedNetProfit,
+                                    status: 'FAILED',
+                                    hash: ''
+                                });
+                            }
 
                             if (estimatedNetProfit > targetProfit) {
-                                const roi = (estimatedNetProfit / Number(this.tradeAmount)) * 100;
-
                                 // ANTI-EXAGGERATION FILTER (User Request: 0.5% - 2%)
                                 // If ROI is huge (> 10%), it's likely a liquidity glitch or honeypot.
                                 if (roi > 10.0) {
