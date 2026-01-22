@@ -214,17 +214,17 @@ export class FlowSniperEngine {
                             const targetProfit = Number(this.tradeAmount) * this.minProfit;
 
                             console.log(`[Scan] ${searchTag}: BuyDex $${(Number(this.tradeAmount) / bestAmountOutNum).toFixed(4)} | SellDex $${(dexSellValueUsdt / bestAmountOutNum).toFixed(4)} | Net: $${estimatedNetProfit.toFixed(4)}`);
-                            
+
                             const roi = (estimatedNetProfit / Number(this.tradeAmount)) * 100;
 
-                            // LOG EVERY SCAN (THROTTLED) - TO SHOW ACTIVITY
-                            if (roi < 0 && Math.random() < 0.2) {
-                                  this.onLog({
+                            // LOG EVERY SCAN - SHOW FULL ACTIVITY!
+                            if (roi < 0 || Math.random() < 0.1) {
+                                this.onLog({
                                     id: 'scan-' + Date.now(),
                                     timestamp: new Date().toLocaleTimeString(),
                                     type: 'LIQUIDITY_SCAN',
                                     pair: `${searchTag}/USDT`,
-                                    path: [`Spread: ${roi.toFixed(2)}%`, `Net: $${estimatedNetProfit.toFixed(2)}`],
+                                    path: [`Spread: ${roi.toFixed(2)}%`, `Net: $${estimatedNetProfit.toFixed(4)}`],
                                     profit: estimatedNetProfit,
                                     status: 'FAILED',
                                     hash: ''
@@ -330,7 +330,7 @@ export class FlowSniperEngine {
                 console.error("[CRITICAL] Erro fatal no Engine Loop:", loopError);
             }
 
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            await new Promise(resolve => setTimeout(resolve, 500));
         }
     }
 }
