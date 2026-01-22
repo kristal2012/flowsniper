@@ -15,6 +15,9 @@ const BINANCE_BASE = 'https://api.binance.com';
 
 const isNode = typeof process !== 'undefined' && process.release && process.release.name === 'node';
 
+const PRICE_CACHE = new Map<string, { price: number, timestamp: number }>();
+const CACHE_DURATION_MS = 10000; // 10s cache
+
 export const fetchHistoricalData = async (symbol: string = 'POLUSDT', interval: string = '1', limit: number = 50): Promise<CandleData[]> => {
     try {
         const path = `${BYBIT_API_PATH}/kline?category=linear&symbol=${symbol}&interval=${interval}&limit=${limit}`;
@@ -68,7 +71,28 @@ export const fetchCurrentPrice = async (symbol: string = 'POLUSDT'): Promise<num
     if (symbol.includes('POL') && !candidates.includes('MATICUSDT')) candidates.push(symbol.replace('POL', 'MATIC'));
     if (symbol.includes('MATIC') && !candidates.includes('POLUSDT')) candidates.push(symbol.replace('MATIC', 'POL'));
 
-    // 1. Try Bybit
+    // 0. CACHE & MAPPING
+    const cached = PRICE_CACHE.get(symbol);
+    if (cached && (Date.now() - cached.timestamp < CACHE_DURATION_MS)) {
+        return cached.price;
+    }
+
+    const fsym = symbol.replace('USDT', '').replace('W', '');
+
+    // 1. TRY CRYPTOCOMPARE (PRIMARY - NO BLOCKING)
+    try {
+        const url = `https://min-api.cryptocompare.com/data/price?fsym=${fsym}&tsyms=USD`;
+        const response = await proxyManager.proxyFetch(url);
+        const data = await response.json();
+        if (data.USD > 0) {
+            PRICE_CACHE.set(symbol, { price: data.USD, timestamp: Date.now() });
+            return data.USD;
+        }
+    } catch (e) {
+        console.warn(`[MarketData] CryptoCompare failed for ${symbol}`);
+    }
+
+    // 2. Try Bybit (Fallback)
     for (const s of candidates) {
         try {
             const path = `${BYBIT_API_PATH}/tickers?category=linear&symbol=${s}`;
